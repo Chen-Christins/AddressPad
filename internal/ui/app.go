@@ -23,6 +23,9 @@ const (
 	modeError
 	modeConnecting
 	modeCopyFallback
+	modeForm
+	modeConfirmDelete
+	modeConfirmDiscard
 )
 
 type statusExpired struct{ generation uint64 }
@@ -45,6 +48,8 @@ type Model struct {
 	copy             func(string) error
 	now              clock
 	copyFallback     string
+	form             serverForm
+	deleteTarget     model.Server
 }
 
 func New(s *store.Store, path string, loadError error) Model {
@@ -124,6 +129,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = max(0, msg.Width), max(0, msg.Height)
 		m.search.Width = max(1, m.width-2)
+		m.resizeForm()
 		m.clamp()
 		return m, nil
 	case statusExpired:
@@ -137,6 +143,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
+		}
+		if m.mode == modeForm {
+			cmd := m.updateForm(msg)
+			return m, cmd
+		}
+		if m.mode == modeConfirmDelete || m.mode == modeConfirmDiscard {
+			cmd := m.confirm(msg)
+			return m, cmd
 		}
 		if m.mode == modeCopyFallback {
 			if msg.String() == "esc" || msg.String() == "q" {
@@ -230,13 +244,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case msg.String() == "c":
 			cmd := m.copyCommand()
 			return m, cmd
-		case msg.String() == "a", msg.String() == "e", msg.String() == "d":
-			return m, m.notify("Server forms will be available in M5", false)
+		case msg.String() == "a", msg.String() == "e":
+			cmd := m.openForm(msg.String() == "e")
+			m.resizeForm()
+			return m, cmd
+		case msg.String() == "d":
+			if len(m.visible) == 0 {
+				cmd := m.notify("No server selected", false)
+				return m, cmd
+			}
+			m.deleteTarget = m.visible[m.cursor]
+			m.mode = modeConfirmDelete
+			m.status = ""
 		case msg.String() == "i":
 			return m, m.notify("SSH config import will be available in M6", false)
 		}
 		m.clamp()
 		return m, nil
+	}
+	if m.mode == modeForm {
+		cmd := m.updateForm(msg)
+		return m, cmd
 	}
 	if m.mode == modeSearch {
 		var cmd tea.Cmd

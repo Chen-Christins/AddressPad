@@ -68,7 +68,7 @@ ssh -p 2222 -i ~/.ssh/id_ed25519 -J bastion -- deploy@10.0.1.5
 8. 标签 `tags`（逗号分隔）
 9. 备注 `note`
 10. 收藏 `favorite`（开关）
-11. 额外参数 `extra_args`（空格分隔）
+11. 额外参数 `extra_args`（空格分隔，支持单/双引号与反斜线转义，不执行 shell 展开；Windows 路径建议放在单引号内）
 
 | 键 | 行为 |
 |---|---|

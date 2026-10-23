@@ -4,7 +4,7 @@
 
 ## 当前进度
 
-已实现 M1 项目骨架、M2 配置数据层、M3 TUI 列表与 M4 SSH 连接/命令复制。**目前尚未实现表单、导入、直连与增删改 CLI**；完整设计见 [docs](docs/README.md)，后续计划见 [路线图](docs/roadmap.md)。
+已实现 M1–M5：项目骨架、配置数据层、TUI 列表、SSH 连接/命令复制及增删改表单。**目前尚未实现导入、直连与非交互新增/列表 CLI**；完整设计见 [docs](docs/README.md)，后续计划见 [路线图](docs/roadmap.md)。
 
 ## 构建
 
@@ -24,7 +24,7 @@ go run .
 
 ## 当前 TUI 用法
 
-直接运行 `apad` 或 `go run .` 打开交互列表，首次运行自动创建空配置。现阶段可按 [配置说明](docs/configuration.md) 手动填写服务器；配置损坏时只显示错误页，不修改文件。
+直接运行 `apad` 或 `go run .` 打开交互列表，首次运行自动创建空配置。按 `a` 添加第一条服务器，无需手动编辑配置；也可按 [配置说明](docs/configuration.md) 手动填写。配置损坏时只显示错误页，不修改文件。
 
 - `↑/↓`、`j/k`、`ctrl+p/ctrl+n` 导航，`g/G` 跳到首尾。
 - `/` 搜索：名称、用户、主机、分组、标签支持大小写不敏感的子序列匹配，空格分隔的关键词必须全部命中。
@@ -33,11 +33,18 @@ go run .
 - `enter` 连接选中服务器，终端交给系统 `ssh`；退出 SSH 后返回列表并清屏重绘。SSH 正常退出（退出码 0）时保存 `last_used` 并重新排序；失败不更新。搜索模式下也支持连接并保留搜索条件。
 - `c` 复制等效 SSH 命令。Windows 使用 PowerShell 命令语法和 UTF-8 剪贴板，macOS/Linux 使用 POSIX shell 语法；不支持粘贴到 Windows cmd.exe。
 - `?` 打开帮助，`esc` / `?` / `q` 关闭；列表中 `q` 或 `ctrl+c` 退出。SSH 运行期间按键直接交给 SSH，包括 `ctrl+c`。
-- 支持窄终端、中文显示及 `NO_COLOR`。表单和导入快捷键目前仅提示后续阶段，尚不执行操作。
+- `a` 新增、`e` 编辑、`d` 删除；删除需 `y` / `enter` 确认，`n` / `esc` 取消。
+- 表单用 `tab` / `shift+tab` / `↑` / `↓` 切换字段，`ctrl+s` 保存；`enter` 跳到下一字段，在最后字段保存。备注用 `alt+enter` 换行，收藏字段用空格切换。
+- 表单 `esc` 取消，有修改时需确认放弃；`n` 继续编辑。`ctrl+c` 直接取消并退出，不保存。非法字段内联提示并聚焦首个错误，保存失败保留输入以便重试。
+- 标签用逗号分隔；额外参数支持单/双引号和反斜线转义，不做变量或命令展开。Windows 路径建议用单引号，如 `-i 'C:\Users\name\my key'`。编辑会保留 ID、最近使用时间和原始参数边界。
+- 保存后选中对应条目；若新名称或字段不再匹配原过滤条件，会清空过滤以显示该条目。
+- 支持窄终端、中文显示及 `NO_COLOR`。导入快捷键目前仅提示后续阶段，尚不执行操作。
 
 连接需安装 OpenSSH 并将 `ssh` 加入 PATH。剪贴板依赖：macOS `pbcopy`，Windows `powershell.exe` / `Set-Clipboard`，Linux 依次尝试 `wl-copy`、`xclip`、`xsel`；失败时打开命令展示页供手动复制。`extra_args` 会传给 OpenSSH（可包含 `ProxyCommand` 等会执行外部程序的选项），请仅使用可信配置。
 
 M4 已通过模拟子进程的终端移交和退出码集成测试；真实主机、密码/密钥认证、host key 提示及 Windows Terminal 恢复效果尚待手工验收。
+
+M5 已自动测试增删改、取消确认、错误聚焦、失败重试及多尺寸表单布局；实际终端键盘/输入法与多行备注显示仍待手工验收。
 
 可通过 `-ldflags "-X main.version=v0.1.0 -X main.commit=COMMIT -X main.date=DATE"` 注入构建信息，或使用 `make build VERSION=v0.1.0`。Makefile 的 `DATE` 默认使用最新提交时间，可通过 `make build DATE=...` 覆盖。
 

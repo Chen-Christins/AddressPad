@@ -51,6 +51,13 @@ func (m Model) View() string {
 	if m.mode == modeCopyFallback {
 		return m.copyView()
 	}
+	if m.mode == modeForm || m.mode == modeConfirmDiscard {
+		view := m.formView()
+		if m.mode == modeConfirmDiscard {
+			view = m.confirmationView(view)
+		}
+		return view
+	}
 	lines := []string{m.styles.title.Render(clip(fmt.Sprintf("AddressPad  %d/%d servers", len(m.visible), len(m.servers)), m.width))}
 	if m.mode == modeSearch {
 		lines = append(lines, m.search.View())
@@ -73,7 +80,7 @@ func (m Model) View() string {
 			}
 		} else if row == 0 {
 			if len(m.servers) == 0 {
-				text = "No servers yet. Add entries to " + m.path
+				text = "No servers yet. Press a to add a server."
 			} else {
 				text = "no match — esc to clear"
 			}
@@ -87,12 +94,15 @@ func (m Model) View() string {
 		if m.mode == modeSearch {
 			status = "SEARCH | type to filter · ↑/↓ select · esc back"
 		} else {
-			status = "LIST " + m.position() + " | enter connect · c copy · / search · f pin · ? help · q quit"
+			status = "LIST " + m.position() + " | enter connect · a/e/d edit · / search · ? help · q quit"
 		}
 	}
 	lines = append(lines, m.styles.muted.Render(clip(status, m.width)))
 	if m.mode == modeHelp {
 		lines = m.helpOverlay(lines)
+	}
+	if m.mode == modeConfirmDelete {
+		return m.confirmationView(strings.Join(lines, "\n"))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -109,7 +119,7 @@ func (m Model) helpOverlay(lines []string) []string {
 	content := []string{
 		"Help — ? / esc / q closes", "↑/k/ctrl+p   Move up", "↓/j/ctrl+n   Move down", "g / G       First / last server",
 		"/           Search (subsequence, AND words)", "esc         Back; clear if no match", "f           Toggle favorite and save", "q / ctrl+c  Quit",
-		"enter       Connect using system SSH", "c           Copy SSH command", "M5: forms; M6: import",
+		"enter       Connect using system SSH", "c           Copy SSH command", "a / e / d   Add / edit / delete", "M6: import",
 	}
 	height := min(len(content)+2, m.height-2)
 	width := min(58, m.width-2)

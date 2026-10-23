@@ -31,7 +31,8 @@ Commands:
 
 Without a command, open the interactive server list.
 In the list: enter connects using OpenSSH; c copies the SSH command.
-Forms, direct-connect CLI and import commands are not implemented yet.
+In the list: a adds, e edits, d deletes (with confirmation).
+Direct-connect CLI and import commands are not implemented yet.
 `
 
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }

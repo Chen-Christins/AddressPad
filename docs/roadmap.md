@@ -1,26 +1,28 @@
 # 路线图
 
-当前阶段：设计完成，等待开码。目标首个版本 `v0.1.0`。
+当前阶段：M1 项目骨架与 M2 数据层已实现，下一阶段为 M3 TUI 列表。目标首个版本 `v0.1.0`。
+
+验证记录：本机通过 `go test ./...`、`go vet ./...`、`go build`；测试覆盖率 main 90%、model 86%、store 89%。本机为 windows/386，无法运行 `-race`，Unix 权限验证也需在 Linux/macOS 执行，已配置跨平台 CI，尚待 CI 验证。M7 发布配置尚未实现，`snapshot` 目前仅为预留命令。
 
 ## 里程碑
 
 ### M1 项目骨架
 
-- [ ] 初始化 go.mod（Go 1.26）
-- [ ] `main.go`：子命令分发、`--config`、`--version`
-- [ ] 版本号通过 `-ldflags -X` 注入（version / commit / date）
-- [ ] Makefile：`build`、`run`、`test`、`lint`、`snapshot`
-- [ ] `.gitignore`、LICENSE
+- [x] 初始化 go.mod（Go 1.26）
+- [x] `main.go`：子命令分发、`--config`、`--version`
+- [x] 版本号通过 `-ldflags -X` 注入（version / commit / date）
+- [x] Makefile：`build`、`run`、`test`、`lint`、`snapshot`
+- [x] `.gitignore`、LICENSE
 
 **完成标准**：`go build` 产出可执行文件，`apad --version` 与 `apad --help` 正常，未知子命令返回退出码 2。
 
 ### M2 数据层
 
-- [ ] `model.Server` / `model.Config` 与校验、默认值、`~` 展开
-- [ ] `store.Load` / `Save`：路径解析、权限、原子写入、备份
-- [ ] 损坏文件识别（语法错误、版本过高）
-- [ ] CRUD：add / update / delete / toggle favorite
-- [ ] 表驱动单元测试
+- [x] `model.Server` / `model.Config` 与校验、默认值、`~` 展开
+- [x] `store.Load` / `Save`：路径解析、权限、原子写入、备份
+- [x] 损坏文件识别（语法错误、版本过高）
+- [x] CRUD：add / update / delete / toggle favorite
+- [x] 表驱动单元测试
 
 **完成标准**：`go test -race ./internal/...` 全绿；手工破坏 YAML 后程序只读报错且原文件不变；保存后权限为 0600。
 

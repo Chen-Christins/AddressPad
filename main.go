@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"addresspad/internal/store"
+	"addresspad/internal/ui"
 )
 
 var (
@@ -28,12 +29,17 @@ Commands:
   config path    Print the effective configuration path without creating it
   help           Show help
 
-The TUI, connection and import commands are not implemented yet.
+Without a command, open the interactive server list.
+Connection, forms and import commands are not implemented yet.
 `
 
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
 
 func run(args []string, out, errOut io.Writer) int {
+	return runWithUI(args, os.Stdin, out, errOut, ui.Run)
+}
+
+func runWithUI(args []string, input io.Reader, out, errOut io.Writer, launch func(string, io.Reader, io.Writer) error) int {
 	flags := flag.NewFlagSet("apad", flag.ContinueOnError)
 	flags.SetOutput(errOut)
 	config := flags.String("config", "", "configuration path")
@@ -67,6 +73,13 @@ func run(args []string, out, errOut io.Writer) int {
 		fmt.Fprintf(errOut, "unknown command or arguments: %v\nRun apad --help for usage.\n", pos)
 		return 2
 	}
-	fmt.Fprintln(errOut, "TUI is not implemented yet; run apad --help for available commands.")
-	return 1
+	path, err := store.ResolvePath(*config)
+	if err == nil {
+		err = launch(path, input, out)
+	}
+	if err != nil {
+		fmt.Fprintln(errOut, err)
+		return 1
+	}
+	return 0
 }

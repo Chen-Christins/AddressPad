@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,7 +25,6 @@ func TestRun(t *testing.T) {
 		{"unknown flag", []string{"--missing"}, 2, "flag provided but not defined"},
 		{"missing config value", []string{"--config"}, 2, "flag needs an argument"},
 		{"invalid config command", []string{"config"}, 2, "unknown command"},
-		{"pending TUI", nil, 1, "TUI is not implemented"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var out, stderr bytes.Buffer
@@ -34,6 +35,30 @@ func TestRun(t *testing.T) {
 				t.Fatalf("unexpected output: %s%s", &out, &stderr)
 			}
 		})
+	}
+}
+
+func TestLaunchTUI(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "servers.yaml")
+	for _, fail := range []bool{false, true} {
+		var out, stderr bytes.Buffer
+		called := false
+		code := runWithUI([]string{"--config", path}, strings.NewReader(""), &out, &stderr, func(got string, input io.Reader, output io.Writer) error {
+			called = true
+			if got != path || input == nil || output != &out {
+				t.Fatal("wrong TUI arguments")
+			}
+			if fail {
+				return fmt.Errorf("terminal unavailable")
+			}
+			return nil
+		})
+		if !called || (code != 0) != fail {
+			t.Fatalf("called=%v code=%d", called, code)
+		}
+		if fail && !strings.Contains(stderr.String(), "terminal unavailable") {
+			t.Fatal("launch error missing")
+		}
 	}
 }
 

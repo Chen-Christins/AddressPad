@@ -2,7 +2,7 @@
 
 用 Go + Bubble Tea 编写的 TUI SSH 管理器：在终端里搜索、维护服务器列表，选中后一键连接。
 
-> 状态：M1 项目骨架与 M2 数据层已实现，正在进入 M3 TUI 阶段。命令名 `apad`。以下功能文档描述目标行为；当前可用命令为 `--help`、`--version`、`config path`，详见根目录 README。
+> 状态：M1 项目骨架、M2 数据层与 M3 TUI 列表已实现，下一阶段为 M4 SSH 连接。命令名 `apad`。以下功能文档描述目标行为；当前可用功能为交互列表、搜索、收藏、帮助以及 `--help`、`--version`、`config path`，详见根目录 README。
 
 ## 文档索引
 

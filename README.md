@@ -4,7 +4,17 @@
 
 ## 当前进度
 
-已实现 M1–M6：项目骨架、配置数据层、TUI 列表、SSH 连接/命令复制、增删改表单、SSH 配置导入及 CLI。下一阶段是 M7 发布配置；真实 SSH/终端交互与跨平台验收仍待完成。完整设计见 [docs](docs/README.md)，进度见 [路线图](docs/roadmap.md)。
+已实现 M1–M6 功能及 M7 打包/发布配置，本地已生成六个平台 snapshot。**尚未正式发布 v0.1.0**，真实 SSH/终端交互、跨平台运行和远端工作流仍待验收。完整设计见 [docs](docs/README.md)，进度见 [路线图](docs/roadmap.md)。
+
+## 安装
+
+正式发布后，可在 [GitHub Releases](https://github.com/Chen-Christins/AddressPad/releases) 下载对应系统和 CPU 的包；若尚无公开版本，请使用下方源码构建方式。支持 macOS/Linux/Windows × amd64/arm64，单二进制无需 Go 运行时；连接需另有系统 OpenSSH。
+
+1. 下载归档和同版本 `checksums.txt`，核对 SHA-256（Linux：`sha256sum -c checksums.txt --ignore-missing`；macOS：`shasum -a 256 文件名`；PowerShell：`Get-FileHash 文件名 -Algorithm SHA256`，后两者与清单手工比较）。
+2. macOS/Linux 解压 `tar -xzf 文件名.tar.gz`，将 `apad` 放入 PATH 下可写目录（如 `~/.local/bin`，并将其加入 PATH）。Windows 解压 zip，将包含 `apad.exe` 的目录加入用户 PATH。
+3. 运行 `apad --version`、`ssh -V`，再运行 `apad`。Windows 推荐 Windows Terminal + PowerShell，并安装 OpenSSH Client。
+
+发布包中的版本不带 `v` 前缀，例如 tag `v0.1.0` 对应 `addresspad_0.1.0_windows_amd64.zip`。本地 snapshot 位于 `dist/`，不属于正式版本。
 
 ## 构建
 
@@ -80,7 +90,30 @@ go test -race ./...
 
 数据层支持 YAML 校验、默认值、稳定 ID、原子写入、备份、增删改与收藏切换；保存失败不提交内存修改，损坏或版本过高的配置拒绝覆盖。非 Windows 下新目录权限为 `0700`、配置及备份为 `0600`；Windows 权限位仅尽力处理。
 
-`make snapshot` 是后续发布流程的预留入口，需在 M7 补齐 GoReleaser 配置后使用。
+## 打包与发布
+
+使用 GoReleaser v2.12.0：
+
+```sh
+goreleaser check
+goreleaser release --snapshot --clean
+# 或 make snapshot
+```
+
+生成六个平台包和 SHA-256 清单到 `dist/`，snapshot 不上传。GitHub tag 工作流通过测试后创建草稿 release，手工从分支运行只归档 snapshot。详见 [发布说明与人工验收清单](docs/releasing.md)。本轮未创建或推送 tag。
+
+界面布局示意（非真实终端截图，截图/录屏仍待人工验收）：
+
+```text
+AddressPad  2/2 servers
+Filter:
+────────────────────────────────────────────────────────────
+> ★ prod-web      deploy@10.0.0.1:22     [prod] #web
+    staging       ubuntu@example.com:2222
+
+────────────────────────────────────────────────────────────
+LIST 1/2 | enter connect · a/e/d edit · / search · ? help
+```
 
 ## 许可
 

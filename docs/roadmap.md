@@ -1,8 +1,8 @@
 # 路线图
 
-当前阶段：M1–M6 代码已实现，下一阶段为 M7 发布。目标首个版本 `v0.1.0`。真实主机与终端交互验收尚未完成。
+当前阶段：M1–M6 功能及 M7 打包/发布配置已实现，六个平台 snapshot 验证通过。目标首个版本 `v0.1.0` 尚未发布；真实主机、终端交互、跨平台运行及远端工作流验收尚未完成。
 
-验证记录：本机通过 `go test ./...`、`go vet ./...`、`go build`；测试覆盖率 main 91.7%、model 86%、store 89.1%、ui 87.8%。M3 已自动测试 60×20、200×50、24×8 等尺寸的行数/宽度、模式切换、搜索排序、收藏及错误页；1000 条记录过滤基准约 0.22 ms/op（windows/386），真实终端交互与截图仍待手工验收。本机为 windows/386，无法运行 `-race`，Unix 权限验证也需在 Linux/macOS 执行，已配置跨平台 CI，尚待 CI 验证。M7 发布配置尚未实现，`snapshot` 目前仅为预留命令。
+验证记录：本机通过 `go test ./...`、`go vet ./...`、`go build`。M3 已自动测试 60×20、200×50、24×8 等尺寸的布局、模式、搜索排序；1000 条记录过滤约 0.22 ms/op（windows/386）。本机 Go 为 windows/386，无法运行 `-race`，Unix 权限与远端 CI 待验。GoReleaser 2.12.0 的配置检查、六平台 snapshot、SHA-256 核对及 Windows amd64 版本输出均通过。详见 [releasing.md](releasing.md)。
 
 ## 里程碑
 
@@ -79,20 +79,22 @@ M6 自动测试覆盖：多别名/引号/注释/Include glob 与上下文、相�
 
 ### M7 发布
 
-- [ ] `.goreleaser.yaml`：darwin / linux / windows × amd64 / arm64，`CGO_ENABLED=0`
-- [ ] GitHub Actions：tag 触发 release、checksums、产物归档
+- [x] `.goreleaser.yaml`：darwin / linux / windows × amd64 / arm64，`CGO_ENABLED=0`
+- [x] GitHub Actions：tag 触发草稿 release、checksums、产物归档（远端执行待验证）
 - [ ] README：截图 / asciinema、安装、常用操作
 - [ ] `docs/` 与实现保持一致
 - [ ] 打 tag `v0.1.0`
+
+M7 验证：GoReleaser 2.12.0 `check` 与 `release --snapshot --clean` 通过，生成 4 个 tar.gz、2 个 zip 和 checksums.txt；六个归档 SHA-256 全部匹配，Windows amd64 二进制版本注入正确。README 已补安装/用法与明确标注的文本示意，实际截图/录屏待完成；新增发布说明和人工门禁。未打 tag、未推送、未创建远端 release，最终发布需维护者授权。
 
 **完成标准**：`goreleaser release --snapshot --clean` 产出 6 个平台包；三个系统上解压即用（Windows 需自带 OpenSSH）。
 
 ## 总验收清单
 
-- [ ] `go vet ./...` 无告警
+- [x] `go vet ./...` 无告警
 - [ ] `go test -race ./...` 全绿
-- [ ] `go build ./...` 成功
-- [ ] `goreleaser release --snapshot --clean` 成功
+- [x] `go build ./...` 成功
+- [x] `goreleaser release --snapshot --clean` 成功
 - [ ] 本机连接 OrbStack / 真实服务器各一次
 - [ ] 密码认证与密钥认证各验证一次
 - [ ] 配置损坏、无 ssh、UTF-8 中文备注三种异常路径验证

@@ -48,6 +48,9 @@ func (m Model) View() string {
 	if m.mode == modeError {
 		return fitLines([]string{"Configuration could not be loaded (read-only)", "Path: " + m.path, m.loadError.Error(), "", "Fix the file and restart. q / ctrl+c to quit."}, m.width, m.height)
 	}
+	if m.mode == modeCopyFallback {
+		return m.copyView()
+	}
 	lines := []string{m.styles.title.Render(clip(fmt.Sprintf("AddressPad  %d/%d servers", len(m.visible), len(m.servers)), m.width))}
 	if m.mode == modeSearch {
 		lines = append(lines, m.search.View())
@@ -84,7 +87,7 @@ func (m Model) View() string {
 		if m.mode == modeSearch {
 			status = "SEARCH | type to filter · ↑/↓ select · esc back"
 		} else {
-			status = "LIST " + m.position() + " | ↑/↓ j/k · / search · f pin · ? help · q quit"
+			status = "LIST " + m.position() + " | enter connect · c copy · / search · f pin · ? help · q quit"
 		}
 	}
 	lines = append(lines, m.styles.muted.Render(clip(status, m.width)))
@@ -106,7 +109,7 @@ func (m Model) helpOverlay(lines []string) []string {
 	content := []string{
 		"Help — ? / esc / q closes", "↑/k/ctrl+p   Move up", "↓/j/ctrl+n   Move down", "g / G       First / last server",
 		"/           Search (subsequence, AND words)", "esc         Back; clear if no match", "f           Toggle favorite and save", "q / ctrl+c  Quit",
-		"M4: connect / copy; M5: forms; M6: import",
+		"enter       Connect using system SSH", "c           Copy SSH command", "M5: forms; M6: import",
 	}
 	height := min(len(content)+2, m.height-2)
 	width := min(58, m.width-2)

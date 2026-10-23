@@ -1,6 +1,6 @@
 # 路线图
 
-当前阶段：M1 项目骨架、M2 数据层与 M3 TUI 列表已实现，下一阶段为 M4 一键连接。目标首个版本 `v0.1.0`。
+当前阶段：M1–M4 代码已实现，下一阶段为 M5 增删改查表单。目标首个版本 `v0.1.0`。M4 真实主机与交互验收尚未完成。
 
 验证记录：本机通过 `go test ./...`、`go vet ./...`、`go build`；测试覆盖率 main 91.7%、model 86%、store 89.1%、ui 87.8%。M3 已自动测试 60×20、200×50、24×8 等尺寸的行数/宽度、模式切换、搜索排序、收藏及错误页；1000 条记录过滤基准约 0.22 ms/op（windows/386），真实终端交互与截图仍待手工验收。本机为 windows/386，无法运行 `-race`，Unix 权限验证也需在 Linux/macOS 执行，已配置跨平台 CI，尚待 CI 验证。M7 发布配置尚未实现，`snapshot` 目前仅为预留命令。
 
@@ -40,12 +40,14 @@
 
 ### M4 一键连接
 
-- [ ] `sshcmd.Build`：端口、identity、ProxyJump、extra_args、`--`
-- [ ] `exec.LookPath("ssh")` 检查与错误提示
-- [ ] `tea.ExecProcess` 挂起 / 恢复、返回后清屏重绘
-- [ ] 更新 `last_used` 并重新排序
-- [ ] 复制 ssh 命令（macOS / Linux / Windows 剪贴板回退）
-- [ ] argv 表驱动测试
+- [x] `sshcmd.Build`：端口、identity、ProxyJump、extra_args、`--`
+- [x] `exec.LookPath("ssh")` 检查与错误提示
+- [x] `tea.ExecProcess` 挂起 / 恢复、返回后清屏重绘
+- [x] 更新 `last_used` 并重新排序（SSH 退出码 0 时）
+- [x] 复制 ssh 命令（macOS / Linux / Windows 剪贴板回退）
+- [x] argv 表驱动测试
+
+M4 验证：普通测试、静态检查、构建通过；sshcmd 覆盖率 79.4%，ui 覆盖率 91.3%。使用测试子进程验证 `tea.ExecProcess` 的输出移交、正常退出与退出码 23，不访问网络、不操作真实剪贴板。真实 SSH、密码/密钥认证、host key 交互、剪贴板及终端残影验证待手工完成。Windows 剪贴板使用 UTF-8 PowerShell 替代 clip.exe，复制命令按 PowerShell 语法转义。
 
 **完成标准**：本机连接真实主机成功；密码提示与 host key 提示可正常交互；退出后 TUI 无残影；`c` 复制内容可直接粘贴执行。
 

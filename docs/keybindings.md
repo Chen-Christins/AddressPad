@@ -32,7 +32,7 @@ TUI 分为四种交互模式：导航、搜索、表单、确认。当前模式�
 ssh -p 2222 -i ~/.ssh/id_ed25519 -J bastion -- deploy@10.0.1.5
 ```
 
-剪贴板实现：macOS 用 `pbcopy`，Windows 用 `clip`，Linux 依次尝试 `wl-copy`、`xclip`、`xsel`。全部不可用时状态栏提示，并把命令显示在底部供手动复制。
+剪贴板实现：macOS 用 `pbcopy`，Windows 用 PowerShell `Set-Clipboard`（显式 UTF-8 输入，避免中文乱码），Linux 依次尝试 `wl-copy`、`xclip`、`xsel`。全部不可用时打开命令展示页供手动复制，`esc` / `q` 返回。Windows 复制内容使用 PowerShell 语法，其他系统使用 POSIX shell 语法，每个参数都进行引号转义。
 
 ## 搜索模式
 

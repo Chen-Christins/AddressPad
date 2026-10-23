@@ -30,7 +30,8 @@ Commands:
   help           Show help
 
 Without a command, open the interactive server list.
-Connection, forms and import commands are not implemented yet.
+In the list: enter connects using OpenSSH; c copies the SSH command.
+Forms, direct-connect CLI and import commands are not implemented yet.
 `
 
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }

@@ -136,7 +136,7 @@ func TestSearchMode(t *testing.T) {
 	}
 	m = press(m, "pwb")
 	if len(m.visible) != 1 || m.visible[0].Name != "prod-web" {
-		 t.Fatal("search did not filter")
+		t.Fatal("search did not filter")
 	}
 	m = press(m, "esc")
 	if m.mode != modeList || len(m.visible) != 1 || m.search.Value() != "pwb" {

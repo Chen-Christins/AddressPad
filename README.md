@@ -4,7 +4,7 @@
 
 ## 当前进度
 
-已实现 M1 项目骨架、M2 配置数据层与 M3 TUI 列表及其单元测试。**目前尚未实现 SSH 连接、表单、导入与增删改 CLI**；完整设计见 [docs](docs/README.md)，后续计划见 [路线图](docs/roadmap.md)。
+已实现 M1 项目骨架、M2 配置数据层、M3 TUI 列表与 M4 SSH 连接/命令复制。**目前尚未实现表单、导入、直连与增删改 CLI**；完整设计见 [docs](docs/README.md)，后续计划见 [路线图](docs/roadmap.md)。
 
 ## 构建
 
@@ -30,8 +30,14 @@ go run .
 - `/` 搜索：名称、用户、主机、分组、标签支持大小写不敏感的子序列匹配，空格分隔的关键词必须全部命中。
 - 搜索时 `ctrl+u` 清空、`ctrl+w` 删除上一个词；`esc` 返回列表并保留过滤，无匹配时清空过滤。列表中 `esc` 清空过滤。
 - `f` 切换收藏并保存，列表始终按收藏、最近使用、名称排序。
-- `?` 打开帮助，`esc` / `?` / `q` 关闭；列表中 `q` 或任意模式 `ctrl+c` 退出。
-- 支持窄终端、中文显示及 `NO_COLOR`。连接、复制、表单和导入快捷键目前仅提示后续阶段，尚不执行操作。
+- `enter` 连接选中服务器，终端交给系统 `ssh`；退出 SSH 后返回列表并清屏重绘。SSH 正常退出（退出码 0）时保存 `last_used` 并重新排序；失败不更新。搜索模式下也支持连接并保留搜索条件。
+- `c` 复制等效 SSH 命令。Windows 使用 PowerShell 命令语法和 UTF-8 剪贴板，macOS/Linux 使用 POSIX shell 语法；不支持粘贴到 Windows cmd.exe。
+- `?` 打开帮助，`esc` / `?` / `q` 关闭；列表中 `q` 或 `ctrl+c` 退出。SSH 运行期间按键直接交给 SSH，包括 `ctrl+c`。
+- 支持窄终端、中文显示及 `NO_COLOR`。表单和导入快捷键目前仅提示后续阶段，尚不执行操作。
+
+连接需安装 OpenSSH 并将 `ssh` 加入 PATH。剪贴板依赖：macOS `pbcopy`，Windows `powershell.exe` / `Set-Clipboard`，Linux 依次尝试 `wl-copy`、`xclip`、`xsel`；失败时打开命令展示页供手动复制。`extra_args` 会传给 OpenSSH（可包含 `ProxyCommand` 等会执行外部程序的选项），请仅使用可信配置。
+
+M4 已通过模拟子进程的终端移交和退出码集成测试；真实主机、密码/密钥认证、host key 提示及 Windows Terminal 恢复效果尚待手工验收。
 
 可通过 `-ldflags "-X main.version=v0.1.0 -X main.commit=COMMIT -X main.date=DATE"` 注入构建信息，或使用 `make build VERSION=v0.1.0`。Makefile 的 `DATE` 默认使用最新提交时间，可通过 `make build DATE=...` 覆盖。
 

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"addresspad/internal/model"
+	"addresspad/internal/sshcmd"
 	"addresspad/internal/store"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -20,6 +21,8 @@ const (
 	modeSearch
 	modeHelp
 	modeError
+	modeConnecting
+	modeCopyFallback
 )
 
 type statusExpired struct{ generation uint64 }
@@ -37,6 +40,11 @@ type Model struct {
 	loadError        error
 	path             string
 	styles           styles
+	resumeMode       mode
+	command          commandBuilder
+	copy             func(string) error
+	now              clock
+	copyFallback     string
 }
 
 func New(s *store.Store, path string, loadError error) Model {
@@ -47,7 +55,7 @@ func New(s *store.Store, path string, loadError error) Model {
 	input.PromptStyle = newStyles().muted
 	input.TextStyle = newStyles().muted
 	input.Cursor.Style = newStyles().muted
-	m := Model{store: s, path: path, loadError: loadError, search: input, styles: newStyles()}
+	m := Model{store: s, path: path, loadError: loadError, search: input, styles: newStyles(), command: sshcmd.Command, copy: sshcmd.Copy, now: time.Now}
 	if loadError != nil {
 		m.mode = modeError
 	} else if s != nil {
@@ -102,6 +110,17 @@ func (m *Model) notify(text string, persistent bool) tea.Cmd {
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case connectedMsg:
+		cmd := m.connected(msg)
+		return m, cmd
+	case copiedMsg:
+		if msg.err != nil {
+			m.resumeMode = m.mode
+			m.mode = modeCopyFallback
+			m.copyFallback = msg.command
+			return m, m.notify(msg.err.Error(), true)
+		}
+		return m, m.notify("copied: "+msg.command, false)
 	case tea.WindowSizeMsg:
 		m.width, m.height = max(0, msg.Width), max(0, msg.Height)
 		m.search.Width = max(1, m.width-2)
@@ -113,8 +132,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.KeyMsg:
+		if m.mode == modeConnecting {
+			return m, nil
+		}
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
+		}
+		if m.mode == modeCopyFallback {
+			if msg.String() == "esc" || msg.String() == "q" {
+				m.mode = m.resumeMode
+				m.copyFallback = ""
+				m.status = ""
+			}
+			return m, nil
 		}
 		if m.mode == modeError {
 			if key.Matches(msg, keys.quit) {
@@ -139,7 +169,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.mode = modeList
 				return m, nil
 			case "enter":
-				return m, m.notify("SSH connection will be available in M4", false)
+				cmd := m.connect()
+				return m, cmd
 			case "up", "ctrl+p":
 				m.cursor--
 				m.clamp()
@@ -193,8 +224,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				verb = "unpinned "
 			}
 			return m, m.notify(verb+s.Name, false)
-		case msg.String() == "enter", msg.String() == "c":
-			return m, m.notify("SSH connection and copy will be available in M4", false)
+		case msg.String() == "enter":
+			cmd := m.connect()
+			return m, cmd
+		case msg.String() == "c":
+			cmd := m.copyCommand()
+			return m, cmd
 		case msg.String() == "a", msg.String() == "e", msg.String() == "d":
 			return m, m.notify("Server forms will be available in M5", false)
 		case msg.String() == "i":

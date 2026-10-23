@@ -1,6 +1,6 @@
 # 路线图
 
-当前阶段：M1–M5 代码已实现，下一阶段为 M6 导入与 CLI。目标首个版本 `v0.1.0`。真实主机与终端交互验收尚未完成。
+当前阶段：M1–M6 代码已实现，下一阶段为 M7 发布。目标首个版本 `v0.1.0`。真实主机与终端交互验收尚未完成。
 
 验证记录：本机通过 `go test ./...`、`go vet ./...`、`go build`；测试覆盖率 main 91.7%、model 86%、store 89.1%、ui 87.8%。M3 已自动测试 60×20、200×50、24×8 等尺寸的行数/宽度、模式切换、搜索排序、收藏及错误页；1000 条记录过滤基准约 0.22 ms/op（windows/386），真实终端交互与截图仍待手工验收。本机为 windows/386，无法运行 `-race`，Unix 权限验证也需在 Linux/macOS 执行，已配置跨平台 CI，尚待 CI 验证。M7 发布配置尚未实现，`snapshot` 目前仅为预留命令。
 
@@ -66,12 +66,14 @@ M5 验证：`go test ./...`、`go vet ./...`、构建通过，UI 覆盖率 94.4%
 
 ### M6 导入与 CLI
 
-- [ ] `sshconfig.Parse`：Host 多别名、HostName、User、Port、IdentityFile、ProxyJump
-- [ ] Include：glob、相对路径、深度上限、循环检测
-- [ ] 跳过通配符 Host 与 Match 块
-- [ ] `apad import` / `--dry-run` / `--overwrite`
-- [ ] `apad add` / `apad list [--json]` / `apad config path`
-- [ ] 直连：`apad <name>`、`apad connect <name>`、模糊匹配与候选提示
+- [x] `sshconfig.Parse`：Host 多别名、HostName、User、Port、IdentityFile、ProxyJump
+- [x] Include：glob、相对路径、深度上限、循环检测
+- [x] 跳过通配符 Host 与 Match 块
+- [x] `apad import` / `--dry-run` / `--overwrite`
+- [x] `apad add` / `apad list [--json]` / `apad config path`
+- [x] 直连：`apad <name>`、`apad connect <name>`、模糊匹配与候选提示
+
+M6 自动测试覆盖：多别名/引号/注释/Include glob 与上下文、相对路径、深度和循环、Match/通配符跳过、导入预览零写入、一次性合并与覆盖元数据保留、CLI 校验零写入、JSON 数组与排序、名称精确/唯一子串/候选建议、模拟 SSH 子进程输出与退出码及 last_used。TUI `i` 默认跳过同名记录。文本列表按内容对齐、不裁剪，完整 OpenSSH 求值不在范围内；真实导入主机连接与跨平台手工验收仍待完成。
 
 **完成标准**：用 fixture 覆盖多别名、Include、通配符、Match；导入后条目可直接连接；`apad list --json` 可被 `jq` 解析。
 

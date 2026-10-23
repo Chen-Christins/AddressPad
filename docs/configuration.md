@@ -147,6 +147,8 @@ servers:
 | `Match` 块 | 跳过，直到下一个 `Host` |
 | 其他指令 | 忽略（`ForwardAgent`、`LocalForward` 等需手动写入 `extra_args`） |
 
+这是一个有限子集导入器，不执行 `Match exec`，不合并全局或通配符默认值，不完整模拟 OpenSSH 的配置求值。Include 像文本插入一样保留当前 Host 上下文；Match 内 Include 跳过；未匹配的 Include glob 忽略。重复别名保留第一条记录。复杂配置请在导入后核对连接字段。
+
 去重规则：按 `name` 大小写不敏感匹配。已存在时默认跳过；`--overwrite` 更新 `host`、`user`、`port`、`identity_file`、`proxy_jump`，保留 `id`、`favorite`、`note`、`group`、`tags` 和 `last_used`。
 
 ## 版本迁移

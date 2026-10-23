@@ -4,7 +4,7 @@
 
 ## 当前进度
 
-已实现 M1–M5：项目骨架、配置数据层、TUI 列表、SSH 连接/命令复制及增删改表单。**目前尚未实现导入、直连与非交互新增/列表 CLI**；完整设计见 [docs](docs/README.md)，后续计划见 [路线图](docs/roadmap.md)。
+已实现 M1–M6：项目骨架、配置数据层、TUI 列表、SSH 连接/命令复制、增删改表单、SSH 配置导入及 CLI。下一阶段是 M7 发布配置；真实 SSH/终端交互与跨平台验收仍待完成。完整设计见 [docs](docs/README.md)，进度见 [路线图](docs/roadmap.md)。
 
 ## 构建
 
@@ -38,13 +38,33 @@ go run .
 - 表单 `esc` 取消，有修改时需确认放弃；`n` 继续编辑。`ctrl+c` 直接取消并退出，不保存。非法字段内联提示并聚焦首个错误，保存失败保留输入以便重试。
 - 标签用逗号分隔；额外参数支持单/双引号和反斜线转义，不做变量或命令展开。Windows 路径建议用单引号，如 `-i 'C:\Users\name\my key'`。编辑会保留 ID、最近使用时间和原始参数边界。
 - 保存后选中对应条目；若新名称或字段不再匹配原过滤条件，会清空过滤以显示该条目。
-- 支持窄终端、中文显示及 `NO_COLOR`。导入快捷键目前仅提示后续阶段，尚不执行操作。
+- `i` 从 `~/.ssh/config` 导入，已存在的名称跳过，不覆盖。需要预览或覆盖时使用 CLI。
+- 支持窄终端、中文显示及 `NO_COLOR`。
 
 连接需安装 OpenSSH 并将 `ssh` 加入 PATH。剪贴板依赖：macOS `pbcopy`，Windows `powershell.exe` / `Set-Clipboard`，Linux 依次尝试 `wl-copy`、`xclip`、`xsel`；失败时打开命令展示页供手动复制。`extra_args` 会传给 OpenSSH（可包含 `ProxyCommand` 等会执行外部程序的选项），请仅使用可信配置。
 
 M4 已通过模拟子进程的终端移交和退出码集成测试；真实主机、密码/密钥认证、host key 提示及 Windows Terminal 恢复效果尚待手工验收。
 
 M5 已自动测试增删改、取消确认、错误聚焦、失败重试及多尺寸表单布局；实际终端键盘/输入法与多行备注显示仍待手工验收。
+
+## CLI
+
+```sh
+apad add --name prod-web --host 10.0.0.1 --user deploy --tag web
+apad list
+apad list --json
+apad import --dry-run
+apad import --ssh-config ./ssh_config --overwrite
+apad prod-web
+apad connect prod-web
+apad help import
+```
+
+全局 `--config PATH` 放在子命令之前；`--tag` 和 `--extra-arg` 可重复。列表与导入预览不创建配置文件，非法新增、导入解析失败也不写盘。导入在内存中合并后一次保存，`--overwrite` 只更新连接字段，保留 ID、收藏、备注、分组、标签、额外参数与最近使用时间。
+
+直连先大小写不敏感精确匹配，再做唯一子串匹配；多条命中列出候选，无命中提示最接近的 3 个名称。SSH 退出码透传，正常退出后保存 `last_used`；保存失败只警告，不改变 SSH 退出码。与子命令重名的服务器使用 `apad connect NAME`。
+
+导入支持 Host 多别名、HostName、User、Port、IdentityFile、ProxyJump，以及 Include glob/递归（上限 8、检测当前递归链的真实路径循环）。相对 Include 基于用户 `~/.ssh`，未匹配 glob 忽略。通配符 Host、Match 块和未支持指令不做求值；这不是完整的 OpenSSH 配置解析器，全局/通配符默认值不会合并，重复别名保留第一条。复杂配置导入后请先核对列表。
 
 可通过 `-ldflags "-X main.version=v0.1.0 -X main.commit=COMMIT -X main.date=DATE"` 注入构建信息，或使用 `make build VERSION=v0.1.0`。Makefile 的 `DATE` 默认使用最新提交时间，可通过 `make build DATE=...` 覆盖。
 

@@ -1,25 +1,13 @@
 package ui
 
 import (
-	"sort"
 	"strings"
 
 	"addresspad/internal/model"
 )
 
 func sortedServers(servers []model.Server) []model.Server {
-	result := append([]model.Server{}, servers...)
-	sort.SliceStable(result, func(i, j int) bool {
-		a, b := result[i], result[j]
-		if a.Favorite != b.Favorite {
-			return a.Favorite
-		}
-		if !a.LastUsed.Equal(b.LastUsed) {
-			return a.LastUsed.After(b.LastUsed)
-		}
-		return strings.ToLower(a.Name) < strings.ToLower(b.Name)
-	})
-	return result
+	return model.Sorted(servers)
 }
 
 func subsequence(needle, haystack string) bool {

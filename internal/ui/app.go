@@ -257,7 +257,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.mode = modeConfirmDelete
 			m.status = ""
 		case msg.String() == "i":
-			return m, m.notify("SSH config import will be available in M6", false)
+			cmd := m.importSSH()
+			return m, cmd
 		}
 		m.clamp()
 		return m, nil

@@ -21,7 +21,7 @@ func TestRun(t *testing.T) {
 		{"help", []string{"--help"}, 0, "Usage: apad"},
 		{"short help", []string{"-h"}, 0, "Usage: apad"},
 		{"help command", []string{"help"}, 0, "Usage: apad"},
-		{"unknown command", []string{"missing"}, 2, "unknown command"},
+		{"unknown command arguments", []string{"missing", "extra"}, 2, "unknown command"},
 		{"unknown flag", []string{"--missing"}, 2, "flag provided but not defined"},
 		{"missing config value", []string{"--config"}, 2, "flag needs an argument"},
 		{"invalid config command", []string{"config"}, 2, "unknown command"},

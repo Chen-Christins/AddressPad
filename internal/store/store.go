@@ -71,6 +71,24 @@ func Load(path string) (model.Config, error) {
 	return c, nil
 }
 
+// Read loads without creating files, for read-only commands and import previews.
+func Read(path string) (model.Config, error) {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		c := model.Config{}
+		c.Normalize()
+		return c, nil
+	}
+	if err != nil {
+		return model.Config{}, fmt.Errorf("read %s: %w", path, err)
+	}
+	c, err := decode(data)
+	if err != nil {
+		return model.Config{}, fmt.Errorf("load %s: %w", path, err)
+	}
+	return c, nil
+}
+
 // writeAtomic writes and syncs a private temporary file before replacing path.
 // No fallible operations follow rename, so an error leaves the target unchanged.
 func writeAtomic(path string, data []byte) error {

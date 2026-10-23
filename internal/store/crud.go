@@ -23,6 +23,9 @@ func Open(path string) (*Store, error) {
 
 func (s *Store) Config() model.Config { return s.config.Clone() }
 
+// Replace commits a complete configuration in a single transaction.
+func (s *Store) Replace(c model.Config) error { return s.persist(c) }
+
 func (s *Store) persist(c model.Config) error {
 	c = c.Clone()
 	c.Normalize()

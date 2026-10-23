@@ -119,7 +119,7 @@ func (m Model) helpOverlay(lines []string) []string {
 	content := []string{
 		"Help — ? / esc / q closes", "↑/k/ctrl+p   Move up", "↓/j/ctrl+n   Move down", "g / G       First / last server",
 		"/           Search (subsequence, AND words)", "esc         Back; clear if no match", "f           Toggle favorite and save", "q / ctrl+c  Quit",
-		"enter       Connect using system SSH", "c           Copy SSH command", "a / e / d   Add / edit / delete", "M6: import",
+		"enter       Connect using system SSH", "c           Copy SSH command", "a / e / d   Add / edit / delete", "i           Import ~/.ssh/config (skip existing)",
 	}
 	height := min(len(content)+2, m.height-2)
 	width := min(58, m.width-2)

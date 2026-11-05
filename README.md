@@ -112,15 +112,17 @@ goreleaser release --snapshot --clean
 界面布局示意（非真实终端截图，截图/录屏仍待人工验收）：
 
 ```text
-AddressPad  2/2 servers
-Filter:
-────────────────────────────────────────────────────────────
-> ★ prod-web      deploy@10.0.0.1:22     [prod] #web
-    staging       ubuntu@example.com:2222
-
-────────────────────────────────────────────────────────────
-LIST 1/2 | enter connect · a/e/d edit · / search · ? help
+AddressPad  2/2 servers ────────────────────────────────────────────────
+/ type to filter
+    NAME              ADDRESS                 USED     DETAILS
+────────────────────────────────────────────────────────────────────────
+> * prod-web          deploy@10.0.0.1:22      5m ago   [prod] #web
+    staging           ubuntu@example.com:2222 never    [stage]
+────────────────────────────────────────────────────────────────────────
+| LIST 1/2  ·  enter · a/e/d · / · ? · q
 ```
+
+帮助、删除确认与放弃编辑确认使用圆角浮层叠加在当前界面上；状态栏左侧 `|` 在成功时为绿色，失败或警告时为红色。`NO_COLOR` 时保留相同布局，仅去掉颜色。
 
 ## 许可
 

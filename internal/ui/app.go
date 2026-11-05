@@ -42,6 +42,7 @@ type Model struct {
 	cursor, offset   int
 	width, height    int
 	status           string
+	statusFailure    bool
 	statusGeneration uint64
 	loadError        error
 	path             string
@@ -63,11 +64,12 @@ func New(s *store.Store, path string, loadError error) Model {
 	input.Prompt = "/ "
 	input.CharLimit = 256
 	// Unstyled input also respects NO_COLOR regardless of the global color profile.
-	input.PromptStyle = newStyles().muted
-	input.TextStyle = newStyles().muted
-	input.Cursor.Style = newStyles().muted
+	st := newStyles()
+	input.PromptStyle = st.accent
+	input.TextStyle = st.text
+	input.Cursor.Style = st.accent
 	m := Model{
-		store: s, path: path, loadError: loadError, search: input, styles: newStyles(),
+		store: s, path: path, loadError: loadError, search: input, styles: st,
 		command: sshcmd.Command, copy: sshcmd.Copy, now: time.Now,
 		secrets: secret.Default(), executable: os.Executable,
 	}
@@ -107,7 +109,7 @@ func (m *Model) refresh(selectedID string) {
 
 func (m *Model) clamp() {
 	m.cursor = max(0, min(m.cursor, len(m.visible)-1))
-	rows := max(1, m.height-5)
+	rows := m.listRows()
 	m.offset = max(0, min(m.offset, max(0, len(m.visible)-rows)))
 	if m.cursor < m.offset {
 		m.offset = m.cursor
@@ -119,6 +121,7 @@ func (m *Model) clamp() {
 
 func (m *Model) notify(text string, persistent bool) tea.Cmd {
 	m.status = text
+	m.statusFailure = persistent
 	m.statusGeneration++
 	if persistent {
 		return nil
@@ -149,6 +152,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case statusExpired:
 		if msg.generation == m.statusGeneration {
 			m.status = ""
+			m.statusFailure = false
 		}
 		return m, nil
 	case clockTickMsg:
@@ -173,6 +177,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.mode = m.resumeMode
 				m.copyFallback = ""
 				m.status = ""
+				m.statusFailure = false
 			}
 			return m, nil
 		}
@@ -272,6 +277,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.deleteTarget = m.visible[m.cursor]
 			m.mode = modeConfirmDelete
 			m.status = ""
+			m.statusFailure = false
 		case msg.String() == "i":
 			cmd := m.importSSH()
 			return m, cmd

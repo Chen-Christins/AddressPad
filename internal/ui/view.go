@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"addresspad/internal/model"
+	"github.com/charmbracelet/lipgloss"
 )
 
 const lastUsedWidth = 8
@@ -41,11 +42,7 @@ func relativeTime(t, now time.Time) string {
 	return fmt.Sprintf("%dy ago", days/365)
 }
 
-func serverRow(s model.Server, width int, now time.Time) string {
-	star := " "
-	if s.Favorite {
-		star = "★"
-	}
+func serverAddress(s model.Server) string {
 	address := s.Host
 	if strings.Contains(address, ":") {
 		address = "[" + address + "]"
@@ -53,7 +50,15 @@ func serverRow(s model.Server, width int, now time.Time) string {
 	if s.User != "" {
 		address = s.User + "@" + address
 	}
-	address = fmt.Sprintf("%s:%d", address, s.Port)
+	return fmt.Sprintf("%s:%d", address, s.Port)
+}
+
+func serverRow(s model.Server, width int, now time.Time) string {
+	star := " "
+	if s.Favorite {
+		star = "*"
+	}
+	address := serverAddress(s)
 	// serverRow receives width-2 for the selection prefix; 58 keeps the
 	// aligned columns visible at a 60-column terminal.
 	if width < 58 {
@@ -62,7 +67,7 @@ func serverRow(s model.Server, width int, now time.Time) string {
 	nameWidth := min(28, width/4)
 	addressWidth := min(44, width/3)
 	row := star + " " + column(s.Name, nameWidth) + " " + column(address, addressWidth)
-	row += " " + rightColumn(relativeTime(s.LastUsed, now), lastUsedWidth)
+	row += " " + column(relativeTime(s.LastUsed, now), lastUsedWidth)
 	if s.Group != "" {
 		row += " [" + plain(s.Group) + "]"
 	}
@@ -75,6 +80,192 @@ func serverRow(s model.Server, width int, now time.Time) string {
 	return clip(row, width)
 }
 
+type rowPart struct {
+	text  string
+	style lipgloss.Style
+}
+
+func fitParts(parts []rowPart, width int) string {
+	var b strings.Builder
+	remaining := max(0, width)
+	for _, part := range parts {
+		if remaining == 0 {
+			break
+		}
+		text := clip(part.text, remaining)
+		b.WriteString(part.style.Render(text))
+		remaining -= lipgloss.Width(text)
+	}
+	return b.String()
+}
+
+func serverRowStyled(s model.Server, width int, now time.Time, st styles) string {
+	star := " "
+	if s.Favorite {
+		star = "*"
+	}
+	address := serverAddress(s)
+	if width < 58 {
+		return clip(star+" "+s.Name+"  "+address, width)
+	}
+	nameWidth := min(28, width/4)
+	addressWidth := min(44, width/3)
+	fixed := 4 + nameWidth + addressWidth + lastUsedWidth
+	parts := make([]rowPart, 0, 2+len(s.Tags))
+	if s.Group != "" {
+		parts = append(parts, rowPart{" [" + plain(s.Group) + "]", st.group})
+	}
+	for _, tag := range s.Tags {
+		parts = append(parts, rowPart{" #" + plain(tag), st.tag})
+	}
+	if s.Note != "" {
+		parts = append(parts, rowPart{"  " + plain(s.Note), st.muted})
+	}
+	row := st.favorite.Render(star) + " " +
+		st.name.Render(column(s.Name, nameWidth)) + " " +
+		st.muted.Render(column(address, addressWidth)) + " " +
+		st.muted.Render(column(relativeTime(s.LastUsed, now), lastUsedWidth))
+	return row + fitParts(parts, width-fixed)
+}
+
+func (m Model) listRows() int { return max(1, m.height-6) }
+
+func (m Model) headerView() string {
+	brand := m.styles.title.Render("AddressPad")
+	noun := "servers"
+	if len(m.servers) == 1 {
+		noun = "server"
+	}
+	count := m.styles.muted.Render(fmt.Sprintf("%d/%d %s", len(m.visible), len(m.servers), noun))
+	left := brand + "  " + count
+	if lipgloss.Width(left) > m.width {
+		left = brand
+	}
+	if fill := m.width - lipgloss.Width(left) - 1; fill > 0 {
+		left += " " + m.styles.rule.Render(strings.Repeat("─", fill))
+	}
+	return left
+}
+
+func (m Model) filterView() string {
+	if m.mode == modeSearch {
+		return m.search.View()
+	}
+	prompt := m.styles.accent.Render("/ ")
+	query := m.search.Value()
+	if query == "" {
+		return prompt + m.styles.muted.Render(clip("type to filter", max(0, m.width-2)))
+	}
+	return prompt + m.styles.text.Render(clip(query, max(0, m.width-2)))
+}
+
+func (m Model) columnHeader() string {
+	width := m.width - 2
+	header := "    NAME  ADDRESS"
+	if width >= 58 {
+		nameWidth := min(28, width/4)
+		addressWidth := min(44, width/3)
+		header = "    " + column("NAME", nameWidth) + " " +
+			column("ADDRESS", addressWidth) + " " +
+			column("USED", lastUsedWidth) + " DETAILS"
+	}
+	return m.styles.header.Render(clip(header, m.width))
+}
+
+func (m Model) rule() string {
+	return m.styles.rule.Render(strings.Repeat("─", m.width))
+}
+
+func (m Model) centeredLine(text string, style lipgloss.Style) string {
+	text = clip(text, m.width)
+	left := max(0, (m.width-lipgloss.Width(text))/2)
+	return strings.Repeat(" ", left) + style.Render(text)
+}
+
+func (m Model) emptyBody(rows int) []string {
+	content := []string{
+		m.centeredLine("No servers yet", m.styles.title),
+		m.centeredLine("press a to add · i to import", m.styles.muted),
+	}
+	if len(m.servers) > 0 {
+		content = []string{
+			m.centeredLine("No matches", m.styles.title),
+			m.centeredLine("no match — esc to clear filter", m.styles.muted),
+		}
+	}
+	top := max(0, (rows-len(content))/2)
+	body := make([]string, rows)
+	for i := range content {
+		if top+i < rows {
+			body[top+i] = content[i]
+		}
+	}
+	return body
+}
+
+func (m Model) listBody(rows int, now time.Time) []string {
+	if len(m.visible) == 0 {
+		return m.emptyBody(rows)
+	}
+	body := make([]string, 0, rows)
+	for row := range rows {
+		i := m.offset + row
+		if i >= len(m.visible) {
+			body = append(body, "")
+			continue
+		}
+		if i == m.cursor {
+			text := "> " + serverRow(m.visible[i], m.width-2, now)
+			body = append(body, m.styles.selected.Render(column(text, m.width)))
+			continue
+		}
+		body = append(body, "  "+serverRowStyled(m.visible[i], m.width-2, now, m.styles))
+	}
+	return body
+}
+
+func listHint(position string, width int) string {
+	switch {
+	case width >= 110:
+		return "LIST " + position + "  ·  enter connect  ·  a add  ·  e edit  ·  d delete  ·  / search  ·  ? help  ·  q quit"
+	case width >= 90:
+		return "LIST " + position + "  ·  enter connect  ·  a/e/d edit  ·  / search  ·  ? help  ·  q quit"
+	case width >= 50:
+		return "LIST " + position + "  ·  enter · a/e/d · / · ? · q"
+	default:
+		return "LIST " + position
+	}
+}
+
+func searchHint(width int) string {
+	switch {
+	case width >= 60:
+		return "SEARCH  ·  type to filter  ·  ↑/↓ select  ·  esc back"
+	case width >= 40:
+		return "SEARCH · type · ↑/↓ · esc"
+	default:
+		return "SEARCH"
+	}
+}
+
+func (m Model) statusView() string {
+	text := m.status
+	style := m.styles.muted
+	marker := m.styles.accent
+	if text == "" {
+		if m.mode == modeSearch {
+			text = searchHint(m.width)
+		} else {
+			text = listHint(m.position(), m.width)
+		}
+	} else if m.statusFailure {
+		style, marker = m.styles.failure, m.styles.failure
+	} else {
+		style, marker = m.styles.success, m.styles.success
+	}
+	return marker.Render("| ") + style.Render(clip(text, max(0, m.width-2)))
+}
+
 func (m Model) View() string {
 	if m.width == 0 || m.height == 0 {
 		return ""
@@ -83,7 +274,7 @@ func (m Model) View() string {
 		return fitLines([]string{"Terminal too small", "Minimum: 24×8", "q / ctrl+c to quit"}, m.width, m.height)
 	}
 	if m.mode == modeError {
-		return fitLines([]string{"Configuration could not be loaded (read-only)", "Path: " + m.path, m.loadError.Error(), "", "Fix the file and restart. q / ctrl+c to quit."}, m.width, m.height)
+		return m.errorView()
 	}
 	if m.mode == modeCopyFallback {
 		return m.copyView()
@@ -95,55 +286,18 @@ func (m Model) View() string {
 		}
 		return view
 	}
-	lines := []string{m.styles.title.Render(clip(fmt.Sprintf("AddressPad  %d/%d servers", len(m.visible), len(m.servers)), m.width))}
-	if m.mode == modeSearch {
-		lines = append(lines, m.search.View())
-	} else {
-		lines = append(lines, m.styles.muted.Render(clip("Filter: "+m.search.Value(), m.width)))
-	}
-	lines = append(lines, strings.Repeat("─", m.width))
+	lines := []string{m.headerView(), m.filterView(), m.columnHeader(), m.rule()}
 	now := time.Now()
 	if m.now != nil {
 		now = m.now()
 	}
-	rows := m.height - 5
-	for row := range rows {
-		i := m.offset + row
-		text := ""
-		if i < len(m.visible) {
-			prefix := "  "
-			if i == m.cursor {
-				prefix = "> "
-			}
-			text = prefix + serverRow(m.visible[i], m.width-2, now)
-			if i == m.cursor {
-				text = m.styles.selected.Render(column(text, m.width))
-			}
-		} else if row == 0 {
-			if len(m.servers) == 0 {
-				text = "No servers yet. Press a to add a server."
-			} else {
-				text = "no match — esc to clear"
-			}
-			text = clip(text, m.width)
-		}
-		lines = append(lines, text)
-	}
-	lines = append(lines, strings.Repeat("─", m.width))
-	status := m.status
-	if status == "" {
-		if m.mode == modeSearch {
-			status = "SEARCH | type to filter · ↑/↓ select · esc back"
-		} else {
-			status = "LIST " + m.position() + " | enter connect · a/e/d edit · / search · ? help · q quit"
-		}
-	}
-	lines = append(lines, m.styles.muted.Render(clip(status, m.width)))
+	lines = append(lines, m.listBody(m.listRows(), now)...)
+	lines = append(lines, m.rule(), m.statusView())
 	if m.mode == modeHelp {
-		lines = m.helpOverlay(lines)
+		lines = overlayLines(lines, m.helpPanel(), m.width, m.height)
 	}
 	if m.mode == modeConfirmDelete {
-		return m.confirmationView(strings.Join(lines, "\n"))
+		return strings.Join(overlayLines(lines, m.confirmPanel(), m.width, m.height), "\n")
 	}
 	return strings.Join(lines, "\n")
 }
@@ -154,27 +308,4 @@ func fitLines(lines []string, width, height int) string {
 		result[i] = clip(lines[i], width)
 	}
 	return strings.Join(result, "\n")
-}
-
-func (m Model) helpOverlay(lines []string) []string {
-	content := []string{
-		"Help — ? / esc / q closes", "↑/k/ctrl+p   Move up", "↓/j/ctrl+n   Move down", "g / G       First / last server",
-		"/           Search (subsequence, AND words)", "esc         Back; clear if no match", "f           Toggle favorite and save", "q / ctrl+c  Quit",
-		"enter       Connect using system SSH", "c           Copy SSH command", "a / e / d   Add / edit / delete", "i           Import ~/.ssh/config (skip existing)",
-	}
-	height := min(len(content)+2, m.height-2)
-	width := min(58, m.width-2)
-	top := (m.height - height) / 2
-	left := (m.width - width) / 2
-	for row := range height {
-		text := ""
-		if row == 0 || row == height-1 {
-			text = "+" + strings.Repeat("-", width-2) + "+"
-		} else {
-			text = "|" + column(content[row-1], width-2) + "|"
-		}
-		// The panel replaces these rows without changing the underlying state.
-		lines[top+row] = strings.Repeat(" ", left) + m.styles.title.Render(text)
-	}
-	return lines
 }

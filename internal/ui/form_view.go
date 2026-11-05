@@ -14,16 +14,19 @@ func (m Model) formView() string {
 	lines := []string{}
 	focusLine := 0
 	for i, label := range fieldLabels {
+		focused := i == f.focus
 		marker := "  "
-		if i == f.focus {
-			marker = "> "
+		labelStyle := m.styles.label
+		if focused {
+			marker = m.styles.accent.Render("> ")
+			labelStyle = m.styles.focusLabel
 			focusLine = len(lines)
 		}
-		lines = append(lines, clip(marker+label, m.width))
+		lines = append(lines, marker+labelStyle.Render(clip(label, max(0, m.width-2))))
 		switch i {
 		case fieldNote:
 			for _, line := range strings.Split(f.note.View(), "\n") {
-				lines = append(lines, line)
+				lines = append(lines, "  "+line)
 			}
 		case fieldFavorite, fieldSavePassword:
 			value := "[ ]"
@@ -33,7 +36,7 @@ func (m Model) formView() string {
 			if i == fieldSavePassword && f.savePassword {
 				value = "[x]"
 			}
-			lines = append(lines, "  "+value)
+			lines = append(lines, "  "+m.styles.accent.Render(value))
 		default:
 			lines = append(lines, "  "+f.inputs[i].View())
 		}
@@ -41,9 +44,9 @@ func (m Model) formView() string {
 			lines = append(lines, m.styles.failure.Render(clip("  "+err, m.width)))
 		}
 	}
-	rows := max(1, m.height-4)
+	rows := max(1, m.height-5)
 	start := max(0, min(focusLine-1, len(lines)-rows))
-	result := []string{m.styles.title.Render(clip(title, m.width))}
+	result := []string{m.formHeader(title), m.rule()}
 	for i := range rows {
 		if start+i < len(lines) {
 			result = append(result, lines[start+i])
@@ -51,11 +54,17 @@ func (m Model) formView() string {
 			result = append(result, "")
 		}
 	}
+	result = append(result, m.rule())
 	message := f.saveError
-	if message == "" {
+	messageStyle := m.styles.muted
+	if message != "" {
+		messageStyle = m.styles.failure
+	} else {
 		message = fmt.Sprintf("Field %d/%d · tab/↑/↓ navigate", f.focus+1, fieldCount)
 	}
-	result = append(result, clip(message, m.width), clip("ctrl+s save · esc cancel · ctrl+c quit", m.width), "")
+	result = append(result,
+		messageStyle.Render(clip(message, m.width)),
+		m.styles.muted.Render(clip("ctrl+s save · esc cancel · ctrl+c quit", m.width)))
 	return strings.Join(result, "\n")
 }
 
@@ -64,32 +73,11 @@ func (m *Model) resizeForm() {
 		m.form.inputs[i].Width = max(1, m.width-4)
 	}
 	if len(m.form.inputs) > 0 {
-		m.form.note.SetWidth(max(1, m.width-2))
+		m.form.note.SetWidth(max(1, m.width-4))
 	}
 }
 
 func (m Model) confirmationView(base string) string {
-	text := []string{"Discard unsaved changes?", "y: discard · n/esc: keep editing"}
-	if m.mode == modeConfirmDelete {
-		address := m.deleteTarget.Host
-		if m.deleteTarget.User != "" {
-			address = m.deleteTarget.User + "@" + address
-		}
-		text = []string{"Delete server?", m.deleteTarget.Name, address, "y/enter: delete · n/esc: cancel", m.status}
-	}
 	lines := strings.Split(base, "\n")
-	height := min(len(text)+2, m.height)
-	width := min(64, m.width)
-	start := max(0, (m.height-height)/2)
-	for len(lines) < m.height {
-		lines = append(lines, "")
-	}
-	for i := range height {
-		line := "+" + strings.Repeat("-", max(0, width-2)) + "+"
-		if i > 0 && i < height-1 {
-			line = "|" + column(text[i-1], width-2) + "|"
-		}
-		lines[start+i] = strings.Repeat(" ", max(0, (m.width-width)/2)) + line
-	}
-	return strings.Join(lines, "\n")
+	return strings.Join(overlayLines(lines, m.confirmPanel(), m.width, m.height), "\n")
 }

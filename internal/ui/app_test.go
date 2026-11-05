@@ -149,6 +149,58 @@ func TestLastUsedColumn(t *testing.T) {
 	}
 }
 
+func TestLastUsedColumnAlignment(t *testing.T) {
+	m := testModel(t)
+	now := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
+	m.now = func() time.Time { return now }
+	m.servers = []model.Server{
+		{ID: "1", Name: "root", Host: "154.37.219.7", User: "root", Port: 22, LastUsed: now.Add(-45 * time.Second)},
+		{ID: "2", Name: "web", Host: "154.37.219.7", User: "web", Port: 22, LastUsed: now.Add(-21 * time.Minute)},
+		{ID: "3", Name: "db", Host: "154.37.219.7", User: "db", Port: 22, Group: "prod", Tags: []string{"db"}, LastUsed: now.Add(-2 * time.Hour)},
+	}
+	m.refresh("")
+	m = update(m, tea.WindowSizeMsg{Width: 100, Height: 12})
+	lines := strings.Split(m.View(), "\n")
+	usedColumn, detailsColumn := -1, -1
+	for _, line := range lines {
+		if strings.Contains(line, "USED") && strings.Contains(line, "DETAILS") {
+			usedColumn = strings.Index(line, "USED")
+			detailsColumn = strings.Index(line, "DETAILS")
+			break
+		}
+	}
+	if usedColumn < 0 || detailsColumn < 0 {
+		t.Fatalf("column header missing:\n%s", m.View())
+	}
+	for _, tc := range []struct {
+		time, detail string
+	}{
+		{"45s ago", ""},
+		{"21m ago", ""},
+		{"2h ago", "[prod]"},
+	} {
+		found := false
+		for _, line := range lines {
+			index := strings.Index(line, tc.time)
+			if index < 0 {
+				continue
+			}
+			found = true
+			if index != usedColumn {
+				t.Fatalf("%q starts at %d, want %d:\n%s", tc.time, index, usedColumn, m.View())
+			}
+			if tc.detail != "" {
+				if detailIndex := strings.Index(line, tc.detail); detailIndex != detailsColumn {
+					t.Fatalf("%q starts at %d, want %d:\n%s", tc.detail, detailIndex, detailsColumn, m.View())
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("%q not rendered:\n%s", tc.time, m.View())
+		}
+	}
+}
+
 func TestClockTick(t *testing.T) {
 	m := testModel(t)
 	if m.Init() == nil {
@@ -241,7 +293,7 @@ func TestLayoutAndScrolling(t *testing.T) {
 		if m.cursor != len(m.visible)-1 {
 			t.Fatal("last item not selected")
 		}
-		if m.cursor < m.offset || m.cursor >= m.offset+max(1, m.height-5) {
+		if m.cursor < m.offset || m.cursor >= m.offset+max(1, m.listRows()) {
 			t.Fatal("selected item outside viewport")
 		}
 		for _, view := range []string{m.View(), press(m, "?").View()} {
@@ -295,8 +347,18 @@ func TestFavoriteAndStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 	m = press(m, "f")
-	if !m.visible[0].Favorite || !strings.HasPrefix(m.status, "save failed") {
-		t.Fatal("failed favorite save changed UI state")
+	if !m.visible[0].Favorite || !strings.HasPrefix(m.status, "save failed") || !m.statusFailure {
+		t.Fatal("failed favorite save changed UI state or lost failure status")
+	}
+	m.status = ""
+	m.statusFailure = false
+	m = update(m, statusExpired{m.statusGeneration})
+	if m.status != "" || m.statusFailure {
+		t.Fatal("expired success status kept failure flag")
+	}
+	m.notify("save failed", true)
+	if !m.statusFailure {
+		t.Fatal("persistent notification did not mark failure")
 	}
 }
 

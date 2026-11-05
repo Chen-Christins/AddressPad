@@ -2,7 +2,7 @@
 
 用 Go + Bubble Tea 编写的 TUI SSH 管理器：在终端里搜索、维护服务器列表，选中后一键连接。
 
-> 状态：M1–M6 功能及 M7 打包/发布配置已实现，六个平台 snapshot 已生成，尚未正式发布。命令名 `apad`。真实 SSH/终端交互、远端 CI 与跨平台运行仍待验收，详见根目录 README 和发布清单。
+> 状态：M1–M6 功能、密码保存（系统钥匙串 + `SSH_ASKPASS`）及 M7 打包/发布配置已实现，六个平台 snapshot 已生成，尚未正式发布。命令名 `apad`。真实 SSH/终端交互、远端 CI 与跨平台运行仍待验收，详见根目录 README 和发布清单。
 
 ## 文档索引
 
@@ -19,4 +19,4 @@
 
 1. `apad` 打开 TUI，输入即过滤，`Enter` 连接；`a/e/d` 增删改。
 2. 连接时把终端交给系统 `ssh`，所以 agent、ProxyJump、host key 提示全部原生可用。
-3. 数据存在 `servers.yaml`，可用 `apad import` 从 `~/.ssh/config` 导入，也可用 `apad <name>` 直接连接。
+3. 数据存在 `servers.yaml`，密码可选存入系统钥匙串；可用 `apad import` 从 `~/.ssh/config` 导入，也可用 `apad <name>` 直接连接。

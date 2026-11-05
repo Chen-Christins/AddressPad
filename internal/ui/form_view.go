@@ -25,9 +25,12 @@ func (m Model) formView() string {
 			for _, line := range strings.Split(f.note.View(), "\n") {
 				lines = append(lines, line)
 			}
-		case fieldFavorite:
+		case fieldFavorite, fieldSavePassword:
 			value := "[ ]"
-			if f.favorite {
+			if i == fieldFavorite && f.favorite {
+				value = "[x]"
+			}
+			if i == fieldSavePassword && f.savePassword {
 				value = "[x]"
 			}
 			lines = append(lines, "  "+value)

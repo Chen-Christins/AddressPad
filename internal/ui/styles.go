@@ -57,3 +57,8 @@ func column(s string, width int) string {
 	s = clip(s, width)
 	return s + strings.Repeat(" ", max(0, width-lipgloss.Width(s)))
 }
+
+func rightColumn(s string, width int) string {
+	s = clip(s, width)
+	return strings.Repeat(" ", max(0, width-lipgloss.Width(s))) + s
+}

@@ -12,6 +12,49 @@ import (
 	"addresspad/internal/model"
 )
 
+const (
+	// AskpassCommand is an optional hidden subcommand for invoking the helper
+	// manually. OpenSSH itself runs the executable with the prompt as argv[1].
+	AskpassCommand = "__addresspad_askpass"
+	// AskpassServerEnv identifies which keychain entry the helper should read.
+	AskpassServerEnv = "ADDRESSPAD_ASKPASS_SERVER"
+)
+
+// EnableAskpass lets OpenSSH delegate password prompts to this executable.
+// The password itself is read from the keychain by the helper, never passed
+// through the environment or command line.
+func EnableAskpass(cmd *exec.Cmd, executable, serverID string) error {
+	if cmd == nil {
+		return errors.New("cannot configure askpass on a nil command")
+	}
+	if executable == "" || serverID == "" {
+		return errors.New("askpass executable and server id are required")
+	}
+	env := cmd.Environ()
+	for _, key := range []string{"SSH_ASKPASS", "SSH_ASKPASS_REQUIRE", AskpassServerEnv} {
+		env = removeEnv(env, key)
+	}
+	cmd.Env = append(env,
+		"SSH_ASKPASS="+executable,
+		"SSH_ASKPASS_REQUIRE=force",
+		AskpassServerEnv+"="+serverID,
+	)
+	return nil
+}
+
+// removeEnv drops every case-insensitive match so Windows environments cannot
+// keep a stale askpass configuration ahead of the values added above.
+func removeEnv(env []string, key string) []string {
+	filtered := env[:0]
+	for _, entry := range env {
+		name, _, ok := strings.Cut(entry, "=")
+		if !ok || !strings.EqualFold(name, key) {
+			filtered = append(filtered, entry)
+		}
+	}
+	return filtered
+}
+
 func Build(s model.Server) ([]string, error) {
 	s.Normalize()
 	if err := s.Validate(); err != nil {

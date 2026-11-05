@@ -3,11 +3,45 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"addresspad/internal/model"
 )
 
-func serverRow(s model.Server, width int) string {
+const lastUsedWidth = 8
+
+// relativeTime renders an age compactly; zero means the server was never used.
+func relativeTime(t, now time.Time) string {
+	if t.IsZero() {
+		return "never"
+	}
+	age := now.Sub(t)
+	if age < time.Second {
+		return "now"
+	}
+	if seconds := int(age / time.Second); seconds < 60 {
+		return fmt.Sprintf("%ds ago", seconds)
+	}
+	if minutes := int(age / time.Minute); minutes < 60 {
+		return fmt.Sprintf("%dm ago", minutes)
+	}
+	if hours := int(age / time.Hour); hours < 24 {
+		return fmt.Sprintf("%dh ago", hours)
+	}
+	days := int(age / (24 * time.Hour))
+	if days < 7 {
+		return fmt.Sprintf("%dd ago", days)
+	}
+	if days < 30 {
+		return fmt.Sprintf("%dw ago", days/7)
+	}
+	if days < 365 {
+		return fmt.Sprintf("%dmo ago", days/30)
+	}
+	return fmt.Sprintf("%dy ago", days/365)
+}
+
+func serverRow(s model.Server, width int, now time.Time) string {
 	star := " "
 	if s.Favorite {
 		star = "★"
@@ -20,12 +54,15 @@ func serverRow(s model.Server, width int) string {
 		address = s.User + "@" + address
 	}
 	address = fmt.Sprintf("%s:%d", address, s.Port)
-	if width < 60 {
+	// serverRow receives width-2 for the selection prefix; 58 keeps the
+	// aligned columns visible at a 60-column terminal.
+	if width < 58 {
 		return clip(star+" "+s.Name+"  "+address, width)
 	}
 	nameWidth := min(28, width/4)
 	addressWidth := min(44, width/3)
 	row := star + " " + column(s.Name, nameWidth) + " " + column(address, addressWidth)
+	row += " " + rightColumn(relativeTime(s.LastUsed, now), lastUsedWidth)
 	if s.Group != "" {
 		row += " [" + plain(s.Group) + "]"
 	}
@@ -65,6 +102,10 @@ func (m Model) View() string {
 		lines = append(lines, m.styles.muted.Render(clip("Filter: "+m.search.Value(), m.width)))
 	}
 	lines = append(lines, strings.Repeat("─", m.width))
+	now := time.Now()
+	if m.now != nil {
+		now = m.now()
+	}
 	rows := m.height - 5
 	for row := range rows {
 		i := m.offset + row
@@ -74,7 +115,7 @@ func (m Model) View() string {
 			if i == m.cursor {
 				prefix = "> "
 			}
-			text = prefix + serverRow(m.visible[i], m.width-2)
+			text = prefix + serverRow(m.visible[i], m.width-2, now)
 			if i == m.cursor {
 				text = m.styles.selected.Render(column(text, m.width))
 			}

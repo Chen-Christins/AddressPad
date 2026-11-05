@@ -222,7 +222,7 @@ func TestDirectConnectDispatchAndHelp(t *testing.T) {
 			t.Fatalf("%v: %d %s", args, code, err)
 		}
 	}
-	for _, command := range []string{"add", "list", "import", "connect"} {
+	for _, command := range []string{"add", "list", "import", "connect", "password"} {
 		code, out, err := invoke(t, path, command, "--help")
 		if code != 0 || !strings.Contains(out+err, "Usage:") {
 			t.Fatalf("%s help: %d %s %s", command, code, out, err)

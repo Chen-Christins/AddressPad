@@ -90,6 +90,75 @@ func TestSortServers(t *testing.T) {
 	}
 }
 
+func TestRelativeTime(t *testing.T) {
+	now := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		age  time.Duration
+		want string
+	}{
+		{-time.Minute, "now"},
+		{0, "now"},
+		{999 * time.Millisecond, "now"},
+		{time.Second, "1s ago"},
+		{59 * time.Second, "59s ago"},
+		{time.Minute, "1m ago"},
+		{59 * time.Minute, "59m ago"},
+		{time.Hour, "1h ago"},
+		{23 * time.Hour, "23h ago"},
+		{24 * time.Hour, "1d ago"},
+		{6 * 24 * time.Hour, "6d ago"},
+		{7 * 24 * time.Hour, "1w ago"},
+		{29 * 24 * time.Hour, "4w ago"},
+		{30 * 24 * time.Hour, "1mo ago"},
+		{364 * 24 * time.Hour, "12mo ago"},
+		{365 * 24 * time.Hour, "1y ago"},
+		{2 * 365 * 24 * time.Hour, "2y ago"},
+	} {
+		if got := relativeTime(now.Add(-tc.age), now); got != tc.want {
+			t.Fatalf("age %v = %q, want %q", tc.age, got, tc.want)
+		}
+	}
+	if got := relativeTime(time.Time{}, now); got != "never" {
+		t.Fatalf("zero time = %q, want never", got)
+	}
+}
+
+func TestLastUsedColumn(t *testing.T) {
+	m := testModel(t)
+	now := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
+	m.now = func() time.Time { return now }
+	m.servers = []model.Server{
+		{ID: "1", Name: "recent", Host: "a.example", Port: 22, LastUsed: now.Add(-5 * time.Minute)},
+		{ID: "2", Name: "older", Host: "b.example", Port: 22, LastUsed: now.Add(-2 * time.Hour)},
+		{ID: "3", Name: "unused", Host: "c.example", Port: 22},
+	}
+	m.refresh("")
+	m = update(m, tea.WindowSizeMsg{Width: 100, Height: 20})
+	for _, want := range []string{"5m ago", "2h ago", "never"} {
+		if !strings.Contains(m.View(), want) {
+			t.Fatalf("view missing %q:\n%s", want, m.View())
+		}
+	}
+	m = update(m, tea.WindowSizeMsg{Width: 60, Height: 20})
+	if !strings.Contains(m.View(), "5m ago") {
+		t.Fatal("60-column layout should show the last-used column")
+	}
+	m = update(m, tea.WindowSizeMsg{Width: 50, Height: 20})
+	if strings.Contains(m.View(), "5m ago") {
+		t.Fatal("narrow layout should hide the last-used column")
+	}
+}
+
+func TestClockTick(t *testing.T) {
+	m := testModel(t)
+	if m.Init() == nil {
+		t.Fatal("periodic clock tick not scheduled")
+	}
+	if _, cmd := m.Update(clockTickMsg{}); cmd == nil {
+		t.Fatal("clock tick did not reschedule")
+	}
+}
+
 func TestNavigationAndHelp(t *testing.T) {
 	m := testModel(t)
 	m = press(m, "G")

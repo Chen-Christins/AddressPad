@@ -68,7 +68,9 @@ ssh -p 2222 -i ~/.ssh/id_ed25519 -J bastion -- deploy@10.0.1.5
 8. 标签 `tags`（逗号分隔）
 9. 备注 `note`
 10. 收藏 `favorite`（开关）
-11. 额外参数 `extra_args`（空格分隔，支持单/双引号与反斜线转义，不执行 shell 展开；Windows 路径建议放在单引号内）
+11. 密码 `password`（隐藏输入，写入系统钥匙串）
+12. 保存密码 `password_saved`（开关，默认勾选）
+13. 额外参数 `extra_args`（空格分隔，支持单/双引号与反斜线转义，不执行 shell 展开；Windows 路径建议放在单引号内）
 
 | 键 | 行为 |
 |---|---|
@@ -82,6 +84,8 @@ ssh -p 2222 -i ~/.ssh/id_ed25519 -J bastion -- deploy@10.0.1.5
 说明：
 
 - 多行备注用 `alt+enter` 换行
+- 密码字段隐藏输入；编辑时留空会保留原密码。`Save password` 默认勾选，取消勾选会删除已保存密码；填写了密码但未勾选会阻止保存
+- 密码保存成功后立即从表单清空，配置文件只写入 `password_saved` 标记
 - 校验失败时在对应字段下方显示红色提示，焦点自动跳到第一个出错字段
 - 有未保存修改时按 `esc` 弹出确认：`y` 放弃修改，`n` 继续编辑
 - 保存成功返回列表并高亮该条目；保存失败（磁盘只读等）保留表单内容
@@ -115,5 +119,5 @@ ssh -p 2222 -i ~/.ssh/id_ed25519 -J bastion -- deploy@10.0.1.5
 | 删除成功 | `deleted staging` |
 | 收藏切换 | `pinned prod-db` / `unpinned prod-db` |
 | 复制成功 | `copied: ssh -p 22 …` |
-| ssh 退出 | `ssh exited with code 0` / `ssh exited with code 255` |
+| SSH 退出 | `SSH session ended (exit code 0); back in AddressPad` / `(exit code 255)` |
 | 保存失败 | `save failed: permission denied`（停留到下次操作） |

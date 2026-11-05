@@ -1,10 +1,10 @@
 # AddressPad
 
-用 Go 编写的终端 SSH 地址簿，命令名 `apad`。连接将交给系统 OpenSSH，不保存密码。
+用 Go 编写的终端 SSH 地址簿，命令名 `apad`。连接交给系统 OpenSSH；密码可选保存到系统钥匙串（macOS Keychain / Windows Credential Manager / Linux Secret Service），连接时通过 `SSH_ASKPASS` 自动提供。
 
 ## 当前进度
 
-已实现 M1–M6 功能及 M7 打包/发布配置，本地已生成六个平台 snapshot。**尚未正式发布 v0.1.0**，真实 SSH/终端交互、跨平台运行和远端工作流仍待验收。完整设计见 [docs](docs/README.md)，进度见 [路线图](docs/roadmap.md)。
+已实现 M1–M6 功能、密码保存（系统钥匙串 + `SSH_ASKPASS`）及 M7 打包/发布配置，本地已生成六个平台 snapshot。**尚未正式发布 v0.1.0**，真实 SSH/终端交互、跨平台运行和远端工作流仍待验收。完整设计见 [docs](docs/README.md)，进度见 [路线图](docs/roadmap.md)。
 
 ## 安装
 
@@ -40,20 +40,23 @@ go run .
 - `/` 搜索：名称、用户、主机、分组、标签支持大小写不敏感的子序列匹配，空格分隔的关键词必须全部命中。
 - 搜索时 `ctrl+u` 清空、`ctrl+w` 删除上一个词；`esc` 返回列表并保留过滤，无匹配时清空过滤。列表中 `esc` 清空过滤。
 - `f` 切换收藏并保存，列表始终按收藏、最近使用、名称排序。
-- `enter` 连接选中服务器，终端交给系统 `ssh`；退出 SSH 后返回列表并清屏重绘。SSH 正常退出（退出码 0）时保存 `last_used` 并重新排序；失败不更新。搜索模式下也支持连接并保留搜索条件。
+- 宽度 ≥60 时列表显示最近使用相对时间：`now`、`5s ago`、`12m ago`、`3h ago`、`2d ago`、`1w ago`、`4mo ago`、`1y ago`；从未成功连接过显示 `never`，每秒刷新。窄屏会隐藏该列。
+- `enter` 连接选中服务器，终端交给系统 `ssh`；SSH 退出后清除普通屏幕并立即恢复列表，状态栏显示 `SSH session ended (exit code N); back in AddressPad`。所有结果提示都在 TUI 内部，退出 `apad` 时不会翻出上一次 SSH 的输出。每次连接开始前也会清屏，避免旧输出残留在新会话上方。SSH 正常退出（退出码 0）时保存 `last_used` 并重新排序；失败不更新。搜索模式下也支持连接并保留搜索条件。
+- 勾选过保存密码的条目连接时自动应答密码提示；钥匙串条目缺失、首次连接的主机密钥确认、私钥 passphrase、OTP 等仍回退到终端交互。
 - `c` 复制等效 SSH 命令。Windows 使用 PowerShell 命令语法和 UTF-8 剪贴板，macOS/Linux 使用 POSIX shell 语法；不支持粘贴到 Windows cmd.exe。
 - `?` 打开帮助，`esc` / `?` / `q` 关闭；列表中 `q` 或 `ctrl+c` 退出。SSH 运行期间按键直接交给 SSH，包括 `ctrl+c`。
 - `a` 新增、`e` 编辑、`d` 删除；删除需 `y` / `enter` 确认，`n` / `esc` 取消。
-- 表单用 `tab` / `shift+tab` / `↑` / `↓` 切换字段，`ctrl+s` 保存；`enter` 跳到下一字段，在最后字段保存。备注用 `alt+enter` 换行，收藏字段用空格切换。
+- 表单用 `tab` / `shift+tab` / `↑` / `↓` 切换字段，`ctrl+s` 保存；`enter` 跳到下一字段，在最后字段保存。备注用 `alt+enter` 换行，收藏和保存密码字段用空格切换。
+- 密码字段可选，`Save password` 默认勾选。保存后密码写入系统钥匙串，`servers.yaml` 只记录 `password_saved: true`；取消勾选会删除已保存密码，输入了密码却未勾选会阻止保存。
 - 表单 `esc` 取消，有修改时需确认放弃；`n` 继续编辑。`ctrl+c` 直接取消并退出，不保存。非法字段内联提示并聚焦首个错误，保存失败保留输入以便重试。
 - 标签用逗号分隔；额外参数支持单/双引号和反斜线转义，不做变量或命令展开。Windows 路径建议用单引号，如 `-i 'C:\Users\name\my key'`。编辑会保留 ID、最近使用时间和原始参数边界。
 - 保存后选中对应条目；若新名称或字段不再匹配原过滤条件，会清空过滤以显示该条目。
 - `i` 从 `~/.ssh/config` 导入，已存在的名称跳过，不覆盖。需要预览或覆盖时使用 CLI。
 - 支持窄终端、中文显示及 `NO_COLOR`。
 
-连接需安装 OpenSSH 并将 `ssh` 加入 PATH。剪贴板依赖：macOS `pbcopy`，Windows `powershell.exe` / `Set-Clipboard`，Linux 依次尝试 `wl-copy`、`xclip`、`xsel`；失败时打开命令展示页供手动复制。`extra_args` 会传给 OpenSSH（可包含 `ProxyCommand` 等会执行外部程序的选项），请仅使用可信配置。
+连接需安装 OpenSSH 并将 `ssh` 加入 PATH。保存密码使用系统钥匙串：macOS Keychain、Windows Credential Manager、Linux Secret Service（如 gnome-keyring / KWallet）。Linux 无桌面会话或未运行 Secret Service 时无法保存密码，但连接仍可手动输入。Windows 自带 OpenSSH 对 `SSH_ASKPASS` 的支持因版本而异；若被忽略，密码仍保存在 Credential Manager，但连接需手动输入。剪贴板依赖：macOS `pbcopy`，Windows `powershell.exe` / `Set-Clipboard`，Linux 依次尝试 `wl-copy`、`xclip`、`xsel`；失败时打开命令展示页供手动复制。`extra_args` 会传给 OpenSSH（可包含 `ProxyCommand` 等会执行外部程序的选项），请仅使用可信配置。
 
-M4 已通过模拟子进程的终端移交和退出码集成测试；真实主机、密码/密钥认证、host key 提示及 Windows Terminal 恢复效果尚待手工验收。
+M4 已通过模拟子进程的终端移交和退出码集成测试；保存密码的钥匙串读写和 `SSH_ASKPASS` 注入已自动测试，真实主机、密码/密钥认证、host key 提示及 Windows Terminal 恢复效果尚待手工验收。
 
 M5 已自动测试增删改、取消确认、错误聚焦、失败重试及多尺寸表单布局；实际终端键盘/输入法与多行备注显示仍待手工验收。
 
@@ -65,12 +68,16 @@ apad list
 apad list --json
 apad import --dry-run
 apad import --ssh-config ./ssh_config --overwrite
+apad password prod-web
+apad password prod-web --delete
 apad prod-web
 apad connect prod-web
 apad help import
 ```
 
 全局 `--config PATH` 放在子命令之前；`--tag` 和 `--extra-arg` 可重复。列表与导入预览不创建配置文件，非法新增、导入解析失败也不写盘。导入在内存中合并后一次保存，`--overwrite` 只更新连接字段，保留 ID、收藏、备注、分组、标签、额外参数与最近使用时间。
+
+`apad password NAME` 在终端隐藏输入密码，写入系统钥匙串并把 `password_saved` 标记写回配置；标准输入不是终端时读取第一行，适合脚本。`--delete` 删除钥匙串条目并清除标记。密码不会出现在命令行参数、配置文件或 `list --json` 输出中。
 
 直连先大小写不敏感精确匹配，再做唯一子串匹配；多条命中列出候选，无命中提示最接近的 3 个名称。SSH 退出码透传，正常退出后保存 `last_used`；保存失败只警告，不改变 SSH 退出码。与子命令重名的服务器使用 `apad connect NAME`。
 

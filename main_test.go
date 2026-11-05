@@ -6,8 +6,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"addresspad/internal/sshcmd"
 )
 
 func TestRun(t *testing.T) {
@@ -33,6 +36,33 @@ func TestRun(t *testing.T) {
 			}
 			if !strings.Contains(out.String()+stderr.String(), tc.text) {
 				t.Fatalf("unexpected output: %s%s", &out, &stderr)
+			}
+		})
+	}
+}
+
+func TestAskpassArgs(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		env  string
+		want []string
+		ok   bool
+	}{
+		{"environment marker", []string{"root@example.com's password: "}, "server-1", []string{"root@example.com's password: "}, true},
+		{"hidden command", []string{sshcmd.AskpassCommand, "Password:"}, "", []string{"Password:"}, true},
+		{"hidden command with marker", []string{sshcmd.AskpassCommand, "Password:"}, "server-1", []string{"Password:"}, true},
+		{"normal invocation", []string{"list"}, "", nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := askpassArgs(tc.args, func(key string) string {
+				if key == sshcmd.AskpassServerEnv {
+					return tc.env
+				}
+				return ""
+			})
+			if ok != tc.ok || !slices.Equal(got, tc.want) {
+				t.Fatalf("got %q, %v; want %q, %v", got, ok, tc.want, tc.ok)
 			}
 		})
 	}

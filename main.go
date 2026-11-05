@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 
+	"addresspad/internal/askpass"
+	"addresspad/internal/secret"
 	"addresspad/internal/sshcmd"
 	"addresspad/internal/store"
 	"addresspad/internal/ui"
@@ -32,6 +34,7 @@ Commands:
   list [--json]  List servers
   import         Import ~/.ssh/config (--dry-run, --overwrite, --ssh-config PATH)
   connect NAME   Connect directly (or use: apad NAME)
+  password NAME  Save or remove a password in the system keychain (--delete)
   config path    Print the effective configuration path without creating it
   help           Show help
 
@@ -41,7 +44,26 @@ In the list: a adds, e edits, d deletes (with confirmation).
 Run apad help COMMAND for command-specific help.
 `
 
-func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
+func main() {
+	args, isAskpass := askpassArgs(os.Args[1:], os.Getenv)
+	if isAskpass {
+		os.Exit(askpass.Run(args, secret.Default(), os.Getenv, os.Stdout, os.Stderr, askpass.NewTerminal()))
+	}
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+}
+
+// askpassArgs recognizes both the documented hidden subcommand and the way
+// OpenSSH actually invokes SSH_ASKPASS: the executable path with the prompt as
+// argv[1]. The environment marker is inherited from the ssh child process.
+func askpassArgs(args []string, getenv func(string) string) ([]string, bool) {
+	if len(args) > 0 && args[0] == sshcmd.AskpassCommand {
+		return args[1:], true
+	}
+	if getenv(sshcmd.AskpassServerEnv) != "" {
+		return args, true
+	}
+	return nil, false
+}
 
 func run(args []string, out, errOut io.Writer) int {
 	return runWithUI(args, os.Stdin, out, errOut, ui.Run)
@@ -92,7 +114,10 @@ func runWithUI(args []string, input io.Reader, out, errOut io.Writer, launch fun
 		fmt.Fprintln(errOut, err)
 		return 1
 	}
-	c := cli{path: path, in: input, out: out, stderr: errOut, command: sshcmd.Command}
+	c := cli{
+		path: path, in: input, out: out, stderr: errOut, command: sshcmd.Command,
+		secrets: secret.Default(), executable: os.Executable,
+	}
 	if len(pos) > 0 {
 		switch pos[0] {
 		case "add":
@@ -101,6 +126,8 @@ func runWithUI(args []string, input io.Reader, out, errOut io.Writer, launch fun
 			return c.list(pos[1:])
 		case "import":
 			return c.importConfig(pos[1:])
+		case "password":
+			return c.password(pos[1:])
 		case "connect":
 			if len(pos) == 2 && (pos[1] == "--help" || pos[1] == "-h") {
 				fmt.Fprint(out, commandHelp["connect"])

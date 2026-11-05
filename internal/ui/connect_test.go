@@ -63,8 +63,17 @@ func TestExecProcessIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		if !strings.Contains(out.String(), "\x1b[2J\x1b[H") {
+			t.Fatal("previous screen was not cleared before SSH")
+		}
 		if !strings.Contains(out.String(), "simulated SSH output") {
 			t.Fatal("child stdout was not handed to terminal output")
+		}
+		if strings.Contains(out.String(), "[AddressPad] SSH session ended") {
+			t.Fatal("session message leaked to the normal screen")
+		}
+		if seen := strings.Index(out.String(), "simulated SSH output"); seen < 0 || strings.LastIndex(out.String(), "\x1b[2J\x1b[H") < seen {
+			t.Fatal("SSH output was not cleared before returning to the TUI")
 		}
 		if fail {
 			var exit *exec.ExitError
@@ -104,7 +113,7 @@ func TestConnectTransitions(t *testing.T) {
 		if search {
 			want = modeSearch
 		}
-		if m.mode != want || m.status != "ssh exited with code 0" {
+		if m.mode != want || m.status != "SSH session ended (exit code 0); back in AddressPad" {
 			t.Fatalf("return state: %+v", m)
 		}
 		if search && (m.search.Value() != "prod" || !m.search.Focused()) {
@@ -121,7 +130,7 @@ func TestConnectErrorsAndEmpty(t *testing.T) {
 		t.Fatal("launch error missing")
 	}
 	m = update(m, connectedMsg{id: "1", err: errors.New("launch failed")})
-	if !strings.Contains(m.status, "could not start") {
+	if !strings.Contains(m.status, "could not start") && !strings.Contains(m.status, "Could not start") {
 		t.Fatal("start error missing")
 	}
 	m.visible = nil
@@ -149,15 +158,16 @@ func TestConnectionUpdatesLastUsed(t *testing.T) {
 	m := New(s, path, nil)
 	now := time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)
 	m.now = func() time.Time { return now }
-	m = update(m, connectedMsg{id: "2"})
-	if m.visible[0].ID != "2" || !m.visible[0].LastUsed.Equal(now) {
+	started := now.Add(-2 * time.Hour)
+	m = update(m, connectedMsg{id: "2", started: started})
+	if m.visible[0].ID != "2" || !m.visible[0].LastUsed.Equal(started) {
 		t.Fatal("success did not update and sort")
 	}
 	c, err := store.Load(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !c.Servers[1].LastUsed.Equal(now) {
+	if !c.Servers[1].LastUsed.Equal(started) {
 		t.Fatal("last_used was not persisted")
 	}
 	m = update(m, connectedMsg{id: "1", err: errors.New("failed")})

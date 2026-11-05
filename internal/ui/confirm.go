@@ -1,11 +1,17 @@
 package ui
 
-import tea "github.com/charmbracelet/bubbletea"
+import (
+	"errors"
+
+	"addresspad/internal/secret"
+	tea "github.com/charmbracelet/bubbletea"
+)
 
 func (m *Model) confirm(msg tea.KeyMsg) tea.Cmd {
 	key := msg.String()
 	if m.mode == modeConfirmDiscard {
 		if key == "y" {
+			m.form.inputs[fieldPassword].SetValue("")
 			m.mode = modeList
 		}
 		if key == "n" || key == "esc" {
@@ -27,11 +33,17 @@ func (m *Model) confirm(msg tea.KeyMsg) tea.Cmd {
 	if err := m.store.Delete(m.deleteTarget.ID); err != nil {
 		return m.notify("delete failed: "+err.Error(), true)
 	}
+	warning := ""
+	if m.deleteTarget.PasswordSaved && m.secrets != nil {
+		if err := m.secrets.Delete(m.deleteTarget.ID); err != nil && !errors.Is(err, secret.ErrNotFound) {
+			warning = "; password cleanup failed: " + err.Error()
+		}
+	}
 	oldCursor := m.cursor
 	m.servers = sortedServers(m.store.Config().Servers)
 	m.refresh("")
 	m.cursor = oldCursor
 	m.clamp()
 	m.mode = modeList
-	return m.notify("deleted "+m.deleteTarget.Name, false)
+	return m.notify("deleted "+m.deleteTarget.Name+warning, warning != "")
 }

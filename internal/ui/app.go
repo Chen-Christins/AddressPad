@@ -4,9 +4,11 @@ package ui
 import (
 	"fmt"
 	"io"
+	"os"
 	"time"
 
 	"addresspad/internal/model"
+	"addresspad/internal/secret"
 	"addresspad/internal/sshcmd"
 	"addresspad/internal/store"
 	"github.com/charmbracelet/bubbles/key"
@@ -29,6 +31,7 @@ const (
 )
 
 type statusExpired struct{ generation uint64 }
+type clockTickMsg struct{}
 
 type Model struct {
 	store            *store.Store
@@ -50,6 +53,9 @@ type Model struct {
 	copyFallback     string
 	form             serverForm
 	deleteTarget     model.Server
+	secrets          secret.Store
+	executable       func() (string, error)
+	pendingWarning   string
 }
 
 func New(s *store.Store, path string, loadError error) Model {
@@ -60,7 +66,11 @@ func New(s *store.Store, path string, loadError error) Model {
 	input.PromptStyle = newStyles().muted
 	input.TextStyle = newStyles().muted
 	input.Cursor.Style = newStyles().muted
-	m := Model{store: s, path: path, loadError: loadError, search: input, styles: newStyles(), command: sshcmd.Command, copy: sshcmd.Copy, now: time.Now}
+	m := Model{
+		store: s, path: path, loadError: loadError, search: input, styles: newStyles(),
+		command: sshcmd.Command, copy: sshcmd.Copy, now: time.Now,
+		secrets: secret.Default(), executable: os.Executable,
+	}
 	if loadError != nil {
 		m.mode = modeError
 	} else if s != nil {
@@ -76,7 +86,11 @@ func Run(path string, input io.Reader, output io.Writer) error {
 	return err
 }
 
-func (m Model) Init() tea.Cmd { return nil }
+func (m Model) Init() tea.Cmd { return clockTick() }
+
+func clockTick() tea.Cmd {
+	return tea.Tick(time.Second, func(time.Time) tea.Msg { return clockTickMsg{} })
+}
 
 func (m *Model) refresh(selectedID string) {
 	m.visible = filterServers(m.servers, m.search.Value())
@@ -137,6 +151,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = ""
 		}
 		return m, nil
+	case clockTickMsg:
+		return m, clockTick()
 	case tea.KeyMsg:
 		if m.mode == modeConnecting {
 			return m, nil

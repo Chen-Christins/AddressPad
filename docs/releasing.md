@@ -41,9 +41,10 @@ goreleaser release --snapshot --clean
 
 ## 正式发布前人工门禁
 
-- [ ] 三个系统上解压、`--version`、`--help`、`list --json`、TUI 正常
+- [ ] 三个系统上解压、`--version`、`--help`、`list --json`、`password --help`、TUI 正常
 - [ ] 在支持的平台执行 `go test -race ./...`，确认远端 CI 通过
-- [ ] 真实主机连接；密码/密钥认证、host key 提示、退出后屏幕恢复
+- [ ] 真实主机连接；保存密码/密钥认证、host key 提示、退出后屏幕恢复
+- [ ] macOS Keychain、Windows Credential Manager、Linux Secret Service 各保存并连接一次；确认密码不进入 YAML
 - [ ] Windows Terminal 及 PowerShell 剪贴板，macOS/Linux 剪贴板与无工具回退
 - [ ] 配置损坏不写盘、无 ssh 提示、中文备注/输入法
 - [ ] 新增、编辑、删除、取消确认、保存失败后重试

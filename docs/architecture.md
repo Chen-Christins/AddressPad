@@ -4,10 +4,10 @@ AddressPad（命令 `apad`）是一个用 Go 编写的 TUI SSH 管理器：在�
 
 ## 设计原则
 
-1. **连接交给系统 `ssh`**：只负责拼装参数并移交终端，不实现 SSH 协议。host key 校验、passphrase、ssh-agent、ProxyJump、端口转发、`~/.ssh/config` 中的全局选项全部保持原生行为。
-2. **配置是纯文本**：YAML 可读可改可进版本库，工具不引入数据库或后台服务。
-3. **分层清晰**：UI 只依赖 store / sshcmd 的接口，数据层不感知 TUI。
-4. **依赖最小化**：仅 bubbletea、bubbles、lipgloss、yaml.v3 四个直接依赖。
+1. **连接交给系统 `ssh`**：只负责拼装参数并移交终端，不实现 SSH 协议。密码可选存入系统钥匙串并通过 `SSH_ASKPASS` 提供；host key 校验、passphrase、ssh-agent、ProxyJump、端口转发、`~/.ssh/config` 中的全局选项全部保持原生行为。
+2. **配置是纯文本**：YAML 可读可改可进版本库，密码单独放入系统钥匙串，工具不引入数据库或后台服务。
+3. **分层清晰**：UI 只依赖 store / sshcmd / secret 的接口，数据层不感知 TUI。
+4. **依赖最小化**：直接依赖仅 bubbletea、bubbles、lipgloss、yaml.v3、go-keyring、x/term。
 5. **失败不毁数据**：原子写入 + 备份；配置损坏时只读展示错误，绝不覆盖。
 
 ## 技术栈
@@ -19,7 +19,9 @@ AddressPad（命令 `apad`）是一个用 Go 编写的 TUI SSH 管理器：在�
 | 组件 | Bubbles（textinput、viewport、help、key） | 官方组件 |
 | 样式 | Lipgloss | 自适应深浅色主题 |
 | 配置 | `gopkg.in/yaml.v3` | 保留注释不是目标，结构简单 |
-| SSH | 系统 `ssh` + `tea.ExecProcess` | 完全原生兼容 |
+| SSH | 系统 `ssh` + `tea.Exec` | 完全原生兼容，连接前清屏 |
+| 密码 | `github.com/zalando/go-keyring` | macOS Keychain / Windows Credential Manager / Linux Secret Service |
+| 隐藏输入 | `golang.org/x/term` | CLI 密码输入与交互式 askpass 回退 |
 | CLI | 标准库 `flag` | 单层子命令，无需 cobra |
 | 分发 | goreleaser + GitHub Actions | 6 个平台包 |
 
@@ -27,20 +29,26 @@ AddressPad（命令 `apad`）是一个用 Go 编写的 TUI SSH 管理器：在�
 
 ```
 AddressPad/
-├── main.go                    # 子命令分发、版本号注入
+├── main.go                    # 子命令分发、隐藏 askpass 入口、版本号注入
+├── commands.go                # CLI 子命令：list / add / import / connect / password
 ├── internal/
 │   ├── model/server.go        # Server / Config 类型、校验、归一化
 │   ├── store/store.go         # YAML 读写、原子保存、CRUD
 │   ├── store/store_test.go
 │   ├── sshconfig/parse.go     # 解析 ~/.ssh/config（含 Include）
 │   ├── sshconfig/parse_test.go
-│   ├── sshcmd/cmd.go          # 构造 ssh argv、LookPath、执行
+│   ├── sshcmd/cmd.go          # 构造 ssh argv、LookPath、askpass 环境
 │   ├── sshcmd/cmd_test.go
+│   ├── secret/secret.go       # 系统钥匙串读写、密码校验
+│   ├── secret/secret_test.go
+│   ├── askpass/askpass.go     # SSH_ASKPASS helper 与终端回退
+│   ├── askpass/askpass_test.go
 │   └── ui/
 │       ├── app.go             # 根 Model：模式切换、状态消息
 │       ├── list.go            # 列表、搜索、排序
-│       ├── form.go            # 新增 / 编辑表单
-│       ├── help.go            # 帮助浮层
+│       ├── form.go            # 新增 / 编辑表单、密码写入
+│       ├── connect.go         # 连接、askpass 配置
+│       ├── confirm.go         # 删除确认、钥匙串清理
 │       ├── keys.go            # key.Binding 集中定义
 │       └── styles.go          # Lipgloss 主题
 ├── docs/
@@ -59,15 +67,20 @@ AddressPad/
 | `model` | YAML 字段 | 校验后的 `Server` / `Config` | 仅标准库 |
 | `store` | 配置路径 | `Config`、CRUD、保存结果 | model、yaml |
 | `sshconfig` | `~/.ssh/config` 文本 | `[]Server`（导入候选） | model |
-| `sshcmd` | `Server` | `[]string` argv、执行结果 | model、os/exec |
-| `ui` | store、sshcmd | Bubble Tea `Model` | 以上全部 |
-| `main` | `os.Args` | 进程退出码 | store、sshconfig、sshcmd、ui |
+| `sshcmd` | `Server` | `[]string` argv、执行结果、askpass 环境 | model、os/exec |
+| `secret` | server ID | 钥匙串密码 | go-keyring |
+| `askpass` | SSH prompt、server ID | stdout 密码或终端回答 | secret、x/term |
+| `ui` | store、sshcmd、secret | Bubble Tea `Model` | 以上全部 |
+| `main` | `os.Args` | 进程退出码 | store、sshconfig、sshcmd、secret、askpass、ui |
 
 ## 启动流程
 
 ```mermaid
 flowchart TD
-    A[apad] --> B[解析全局参数 / 子命令]
+    A[apad] --> Q{askpass 调用?}
+    Q -->|是| R[读取钥匙串或回退终端提示]
+    R --> Z[输出到 stdout 并退出]
+    Q -->|否| B[解析全局参数 / 子命令]
     B -->|无子命令| C[确定配置路径]
     B -->|apad NAME| H[按名称查找]
     C --> D{文件存在?}
@@ -77,7 +90,7 @@ flowchart TD
     F -->|成功| G
     F -->|失败| X[错误页：路径 + 行号]
     H --> I[构造 ssh argv]
-    I --> J[exec 系统 ssh]
+    I --> J[按需配置 SSH_ASKPASS 并 exec 系统 ssh]
     J --> K[透传退出码]
 ```
 
@@ -86,23 +99,35 @@ flowchart TD
 ```mermaid
 sequenceDiagram
     participant U as 用户
-    participant T as TUI
+    participant T as TUI / CLI
     participant S as store
     participant X as sshcmd
+    participant K as 系统钥匙串
     participant P as 系统 ssh
+    participant A as apad askpass helper
 
     U->>T: Enter
     T->>X: Build(server)
     X->>X: LookPath("ssh")
-    T->>T: tea.ExecProcess（释放终端）
-    T->>P: ssh -p … -i … -J … user@host
+    opt password_saved
+        T->>X: EnableAskpass(cmd, apad, server.ID)
+    end
+    T->>T: 离开备用屏幕、清除普通屏幕
+    T->>P: ssh …（SSH_ASKPASS=apad）
+    P->>A: 调用 helper（密码提示）
+    A->>K: Get(server ID)
+    K-->>A: password
+    A-->>P: 密码（仅 stdout）
     P-->>T: 退出（含退出码）
-    T->>S: 更新 last_used 并保存
+    T->>T: 清除普通屏幕
+    T->>S: 更新 last_used（本次连接开始时间）并保存
     T->>T: 清屏、重绘列表
     T-->>U: 状态栏显示结果
 ```
 
-`tea.ExecProcess` 负责挂起 / 恢复 TUI。恢复后主动触发一次清屏与全量重绘，避免 ssh 输出残留在屏幕上。
+`tea.Exec` 负责挂起 / 恢复 TUI。启动 ssh 前先清除普通屏幕，避免上一次 SSH 输出残留在新会话上方；ssh 退出后再次清除普通屏幕，再恢复 TUI 并触发一次清屏与全量重绘。结果提示只显示在状态栏 `SSH session ended (exit code N); back in AddressPad`，不向普通屏幕写任何 AddressPad 文案，因此退出 AddressPad 时不会露出上一次 SSH 的输出，也不会让人误以为连接仍由 AddressPad 代理。
+
+未启用保存密码时不会设置 `SSH_ASKPASS`，OpenSSH 仍按原生方式在终端提示。启用后，helper 只自动回答简单密码提示；host key 确认、passphrase、OTP 等会回退到终端。钥匙串条目缺失或读取失败时同样回退，不阻断连接。
 
 ## TUI 状态机
 
@@ -129,9 +154,10 @@ stateDiagram-v2
 ### 列表渲染
 
 - 固定顶部标题栏：应用名、服务器总数、当前过滤条件
-- 中间列表：收藏标记、名称、`user@host:port`、分组、标签、备注
+- 中间列表：收藏标记、名称、`user@host:port`、最近使用相对时间、分组、标签、备注
+- 最近使用时间显示为 `now` / `5s ago` / `12m ago` / `3h ago` / `2d ago` / `1w ago` / `4mo ago` / `1y ago`，未连接过显示 `never`；每秒 tick 刷新，不依赖按键
 - 底部状态栏：最近一次操作结果（3 秒超时）或快捷键提示
-- 列宽按终端宽度分配；终端过窄（< 60 列）时隐藏标签与备注列
+- 列宽按终端宽度分配；终端过窄（< 60 列）时隐藏最近使用、分组、标签与备注列
 - 只使用安全宽度的 Unicode 符号（`★ ●`），不依赖 Nerd Font
 
 ### 排序
@@ -148,9 +174,12 @@ stateDiagram-v2
 |---|---|
 | 配置文件不存在 | 自动创建空配置并进入列表 |
 | YAML 解析失败 | 进入只读错误页，显示路径、行号、原因；`q` 退出 |
-| 保存失败 | 表单保持打开并显示错误，不丢失用户输入 |
+| 保存失败 | 表单保持打开并显示错误，不丢失用户输入；已改动的钥匙串尽力回滚 |
+| 钥匙串不可用 | 保存密码失败并提示；连接时回退终端输入，不阻断 SSH |
+| 钥匙串条目缺失 | askpass helper 回退终端提示；`password_saved` 仅作元数据 |
+| 删除时钥匙串清理失败 | 服务器仍删除，状态栏提示密码清理失败 |
 | `ssh` 不存在 | 状态栏提示安装 OpenSSH；不进入连接 |
-| ssh 非零退出 | 保留终端输出，状态栏显示退出码 |
+| ssh 非零退出 | 状态栏显示退出码；普通屏幕输出在返回 TUI 前清除 |
 | 配置字段非法 | 表单内联校验错误，禁止保存 |
 | 终端过小 | 显示最小尺寸提示 |
 
@@ -161,8 +190,10 @@ stateDiagram-v2
 | `model` | 校验规则、`~` 展开、tags 去重、默认值 |
 | `store` | YAML 往返、原子保存、备份、损坏文件读取、并发读 |
 | `sshconfig` | 多别名、Include、通配符跳过、Match 跳过、引号与注释 |
-| `sshcmd` | argv 表驱动测试（端口、identity、ProxyJump、extra_args、`--`） |
-| `ui` | 过滤逻辑、模式切换、表单校验（`Update` 直接调用，无 golden 文件） |
+| `sshcmd` | argv 表驱动测试（端口、identity、ProxyJump、extra_args、`--`）、askpass 环境 |
+| `secret` | 钥匙串往返、缺失/错误映射、密码校验、模拟 keyring 错误 |
+| `askpass` | 保存密码、缺失回退、host key / passphrase / OTP、`SSH_ASKPASS_PROMPT=none` |
+| `ui` | 过滤逻辑、模式切换、表单校验、密码保存/保留/替换/删除与失败回滚（`Update` 直接调用，无 golden 文件） |
 
 门禁：`go vet ./...`、`go test -race ./...`、`go build ./...`、`goreleaser release --snapshot --clean`。
 
@@ -171,7 +202,9 @@ stateDiagram-v2
 | 取舍 | 原因 |
 |---|---|
 | 不实现 SSH 协议 | 原生兼容性 >> 可控性；也避免自己处理 known_hosts 与 agent |
-| 不存密码（v1） | 明文存储风险高；ssh 自身提示已可接受 |
+| 密码只存钥匙串 | 避免明文进入 YAML 或版本库；代价是复制配置不迁移密码，Linux 依赖 Secret Service |
+| askpass 只自动回答密码 | 不解析全部交互挑战；host key、passphrase、OTP 仍由用户输入 |
+| 同一连接链共用一个服务器 ID | ProxyJump 跳板机提示可能拿到目标密码；建议跳板机使用密钥或 ssh-agent |
 | 无文件锁 | 单人本地工具，后写入者胜出的概率与代价都可接受 |
 | 单分组 | 多级分组会让 v1 的 UI 与 YAML 复杂化，先用单分组 + 多标签 |
 | 不做后台探测 | 避免无谓连接与网络噪音，在线状态留到后续版本 |

@@ -43,9 +43,11 @@ apad connect list      # 服务器名恰好叫 list 时
 连接行为：
 
 - 拼装 `ssh [-p port] [-i identity] [-J proxy_jump] [extra_args...] -- [user@]host`
-- 使用 `tea.ExecProcess` 等价机制直接 exec，标准输入输出完全交给 `ssh`
+- 直接 exec，标准输入输出完全交给 `ssh`；TUI 通过 `tea.Exec` 暂停界面
+- 若条目设置了 `password_saved`，通过 `SSH_ASKPASS` 让同一可执行文件从系统钥匙串读取密码；钥匙串不可用时只警告并回退终端输入
+- 首次连接的主机密钥确认、私钥 passphrase、OTP 等仍由终端交互完成
 - 进程退出码原样透传（包括 ssh 自己的 1、2、255）
-- 连接成功后写回 `last_used`
+- 连接成功后写回本次连接的开始时间到 `last_used`
 
 ### `apad list`
 
@@ -80,6 +82,7 @@ apad list --json
       "group": "prod",
       "tags": ["web", "k8s"],
       "favorite": true,
+      "password_saved": true,
       "note": "生产 Web 入口",
       "extra_args": [],
       "last_used": "2026-10-23T09:12:00+08:00"
@@ -91,6 +94,7 @@ apad list --json
 - 输出到 stdout；错误与提示到 stderr
 - `tags`、`extra_args` 永远输出数组，不输出 `null`
 - 未设置的可选字符串字段输出空字符串
+- `password_saved` 只表示钥匙串中是否保存过密码，输出中永远不包含密码本身
 
 ### `apad add`
 
@@ -123,6 +127,32 @@ apad add \
 | `--extra-arg` | 否 | 可重复，透传给 ssh |
 
 成功时 stdout 输出 `added <name>`，退出码 0；重名或校验失败退出码 2，不会修改文件。
+
+### `apad password <name>`
+
+保存或删除系统钥匙串中的服务器密码：
+
+```bash
+apad password prod-web
+apad password prod-web --delete
+printf '%s\n' "$SSH_PASSWORD" | apad password prod-web
+```
+
+| 参数 | 说明 |
+|---|---|
+| `<name>` | 服务器名称，查找规则与 `connect` 相同 |
+| `--delete` | 删除已保存密码并清除标记；可放在名称之前或之后 |
+
+行为：
+
+- 标准输入是终端时隐藏输入，回车结束；不是终端时读取第一行（去掉行尾 `\r` / `\n`），便于脚本使用。
+- 密码必须非空且不含 NUL、CR、LF；校验失败退出码 2，不写钥匙串也不修改配置。
+- 成功时把密码写入系统钥匙串，并在 YAML 中设置 `password_saved: true`；stdout 输出 `saved password for <name>`。
+- `--delete` 删除钥匙串条目并清除标记；条目本来就不存在时仍返回 0。
+- 配置保存失败时会尽力把钥匙串恢复到之前的值。
+- 密码不会打印到 stdout/stderr，也不会出现在进程参数中。
+
+钥匙串位置、Linux Secret Service 要求和 askpass 限制见 [configuration.md](./configuration.md#密码存储)。
 
 ### `apad import`
 
@@ -194,6 +224,14 @@ TUI 中按 `q` 或 `ctrl+c` 正常退出返回 0；被系统信号终止时为 1
 | `ADDRESSPAD_CONFIG` | 配置文件路径，优先级低于 `--config` |
 | `NO_COLOR` | 设置后禁用所有颜色与样式，输出纯文本 |
 
+连接已保存密码的服务器时，程序会为子进程设置以下内部变量，无需手动配置：
+
+| 变量 | 用途 |
+|---|---|
+| `SSH_ASKPASS` | 指向当前 `apad` 可执行文件 |
+| `SSH_ASKPASS_REQUIRE` | 固定为 `force`，让 OpenSSH 使用 helper |
+| `ADDRESSPAD_ASKPASS_SERVER` | 当前服务器 ID，helper 用它读取钥匙串 |
+
 ## 脚本示例
 
 ```bash
@@ -207,4 +245,7 @@ apad list --json | jq -r '.servers[] | select(.favorite) | .name'
 while read -r name host; do
   apad add --name "$name" --host "$host" --group imported
 done < servers.txt
+
+# 从环境或密码管理器读取密码并保存到系统钥匙串
+printf '%s\n' "$SSH_PASSWORD" | apad password prod-db
 ```

@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"sort"
 	"strings"
@@ -14,9 +16,11 @@ import (
 	"unicode"
 
 	"addresspad/internal/model"
+	"addresspad/internal/secret"
 	"addresspad/internal/sshcmd"
 	"addresspad/internal/sshconfig"
 	"addresspad/internal/store"
+	"golang.org/x/term"
 )
 
 var commandHelp = map[string]string{
@@ -26,9 +30,10 @@ Options: --user USER --port PORT --identity PATH --proxy-jump JUMP
          --group GROUP --tag TAG (repeatable) --note NOTE --favorite
          --extra-arg ARG (repeatable; use --extra-arg=-o for option values)
 `,
-	"import":  "Usage: apad [--config PATH] import [--ssh-config PATH] [--dry-run] [--overwrite]\nDefaults to ~/.ssh/config. Dry run never writes files.\n",
-	"connect": "Usage: apad [--config PATH] connect NAME\nOr: apad [--config PATH] NAME\nCase-insensitive exact match, then unique substring match.\n",
-	"config":  "Usage: apad [--config PATH] config path\nPrint path without creating files.\n",
+	"import":   "Usage: apad [--config PATH] import [--ssh-config PATH] [--dry-run] [--overwrite]\nDefaults to ~/.ssh/config. Dry run never writes files.\n",
+	"connect":  "Usage: apad [--config PATH] connect NAME\nOr: apad [--config PATH] NAME\nCase-insensitive exact match, then unique substring match.\nSaved passwords are supplied through SSH_ASKPASS.\n",
+	"password": "Usage: apad [--config PATH] password NAME [--delete]\nStore a password in the system keychain, or remove it with --delete.\nWhen stdin is not a terminal, the first line is read as the password.\n",
+	"config":   "Usage: apad [--config PATH] config path\nPrint path without creating files.\n",
 }
 
 type repeated []string
@@ -41,6 +46,22 @@ type cli struct {
 	in          io.Reader
 	out, stderr io.Writer
 	command     func(model.Server) (*exec.Cmd, error)
+	secrets     secret.Store
+	executable  func() (string, error)
+}
+
+func (c cli) secretStore() secret.Store {
+	if c.secrets != nil {
+		return c.secrets
+	}
+	return secret.Default()
+}
+
+func (c cli) executablePath() (string, error) {
+	if c.executable != nil {
+		return c.executable()
+	}
+	return os.Executable()
 }
 
 func (c cli) fail(code int, err error) int { fmt.Fprintln(c.stderr, err); return code }
@@ -167,6 +188,117 @@ func (c cli) add(args []string) int {
 	return 0
 }
 
+func (c cli) password(args []string) int {
+	remove := false
+	positional := []string{}
+	for _, arg := range args {
+		switch arg {
+		case "--delete", "-delete":
+			remove = true
+		case "--help", "-h":
+			fmt.Fprint(c.stderr, commandHelp["password"])
+			return 0
+		default:
+			if strings.HasPrefix(arg, "-") {
+				fmt.Fprintf(c.stderr, "flag provided but not defined: %s\n", arg)
+				fmt.Fprint(c.stderr, commandHelp["password"])
+				return 2
+			}
+			positional = append(positional, arg)
+		}
+	}
+	if len(positional) != 1 {
+		fmt.Fprint(c.stderr, commandHelp["password"])
+		return 2
+	}
+	name := positional[0]
+	config, err := store.Read(c.path)
+	if err != nil {
+		return c.fail(1, err)
+	}
+	s, err := resolveServer(config.Servers, name)
+	if err != nil {
+		return c.fail(1, err)
+	}
+	secrets := c.secretStore()
+	if remove {
+		previous, previousErr := secrets.Get(s.ID)
+		if err := secrets.Delete(s.ID); err != nil && !errors.Is(err, secret.ErrNotFound) {
+			return c.fail(1, err)
+		}
+		if s.PasswordSaved {
+			for i := range config.Servers {
+				if config.Servers[i].ID == s.ID {
+					config.Servers[i].PasswordSaved = false
+					break
+				}
+			}
+			if err := store.Save(c.path, config); err != nil {
+				if previousErr == nil {
+					_ = secrets.Set(s.ID, previous)
+				}
+				return c.fail(1, err)
+			}
+		}
+		fmt.Fprintln(c.out, "removed password for "+s.Name)
+		return 0
+	}
+	password, err := c.readPassword(s.Name)
+	if err != nil {
+		return c.fail(2, err)
+	}
+	if err := secret.ValidatePassword(password); err != nil {
+		return c.fail(2, err)
+	}
+	previous, previousErr := secrets.Get(s.ID)
+	previousKnown := previousErr == nil || errors.Is(previousErr, secret.ErrNotFound)
+	if err := secrets.Set(s.ID, password); err != nil {
+		return c.fail(1, err)
+	}
+	for i := range config.Servers {
+		if config.Servers[i].ID == s.ID {
+			config.Servers[i].PasswordSaved = true
+			break
+		}
+	}
+	if err := store.Save(c.path, config); err != nil {
+		if previousKnown {
+			if previousErr == nil {
+				_ = secrets.Set(s.ID, previous)
+			} else {
+				_ = secrets.Delete(s.ID)
+			}
+		}
+		return c.fail(1, err)
+	}
+	fmt.Fprintln(c.out, "saved password for "+s.Name)
+	return 0
+}
+
+func (c cli) readPassword(name string) (string, error) {
+	if c.in == nil {
+		return "", errors.New("stdin is unavailable")
+	}
+	if file, ok := c.in.(*os.File); ok && term.IsTerminal(int(file.Fd())) {
+		fmt.Fprintf(c.stderr, "Password for %s: ", name)
+		value, err := term.ReadPassword(int(file.Fd()))
+		fmt.Fprintln(c.stderr)
+		if err != nil {
+			return "", err
+		}
+		return string(value), nil
+	}
+	line, err := bufio.NewReader(c.in).ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", err
+	}
+	line = strings.TrimRight(line, "\r\n")
+	if line == "" {
+		return "", errors.New("password must not be empty")
+	}
+	return line, nil
+}
+
 func (c cli) importConfig(args []string) int {
 	f := c.flags("import")
 	source := f.String("ssh-config", "~/.ssh/config", "SSH configuration path")
@@ -227,7 +359,17 @@ func (c cli) connect(name string) int {
 	if err != nil {
 		return c.fail(1, err)
 	}
+	if s.PasswordSaved {
+		executable, exeErr := c.executablePath()
+		if exeErr == nil {
+			exeErr = sshcmd.EnableAskpass(cmd, executable, s.ID)
+		}
+		if exeErr != nil {
+			fmt.Fprintln(c.stderr, "warning: saved password unavailable:", exeErr)
+		}
+	}
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = c.in, c.out, c.stderr
+	started := time.Now()
 	err = cmd.Run()
 	code := sshcmd.ExitCode(err)
 	if code < 0 {
@@ -238,7 +380,7 @@ func (c cli) connect(name string) int {
 	}
 	for i := range config.Servers {
 		if config.Servers[i].ID == s.ID {
-			config.Servers[i].LastUsed = time.Now()
+			config.Servers[i].LastUsed = started
 			break
 		}
 	}

@@ -15,19 +15,20 @@ import (
 const CurrentVersion = 1
 
 type Server struct {
-	ID           string    `yaml:"id" json:"id"`
-	Name         string    `yaml:"name" json:"name"`
-	Host         string    `yaml:"host" json:"host"`
-	User         string    `yaml:"user,omitempty" json:"user"`
-	Port         int       `yaml:"port" json:"port"`
-	IdentityFile string    `yaml:"identity_file,omitempty" json:"identity_file"`
-	ProxyJump    string    `yaml:"proxy_jump,omitempty" json:"proxy_jump"`
-	Group        string    `yaml:"group,omitempty" json:"group"`
-	Tags         []string  `yaml:"tags,omitempty" json:"tags"`
-	Favorite     bool      `yaml:"favorite" json:"favorite"`
-	Note         string    `yaml:"note,omitempty" json:"note"`
-	ExtraArgs    []string  `yaml:"extra_args,omitempty" json:"extra_args"`
-	LastUsed     time.Time `yaml:"last_used,omitempty" json:"last_used"`
+	ID            string    `yaml:"id" json:"id"`
+	Name          string    `yaml:"name" json:"name"`
+	Host          string    `yaml:"host" json:"host"`
+	User          string    `yaml:"user,omitempty" json:"user"`
+	Port          int       `yaml:"port" json:"port"`
+	IdentityFile  string    `yaml:"identity_file,omitempty" json:"identity_file"`
+	ProxyJump     string    `yaml:"proxy_jump,omitempty" json:"proxy_jump"`
+	Group         string    `yaml:"group,omitempty" json:"group"`
+	Tags          []string  `yaml:"tags,omitempty" json:"tags"`
+	Favorite      bool      `yaml:"favorite" json:"favorite"`
+	PasswordSaved bool      `yaml:"password_saved,omitempty" json:"password_saved"`
+	Note          string    `yaml:"note,omitempty" json:"note"`
+	ExtraArgs     []string  `yaml:"extra_args,omitempty" json:"extra_args"`
+	LastUsed      time.Time `yaml:"last_used,omitempty" json:"last_used"`
 }
 
 type Config struct {

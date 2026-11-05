@@ -1,6 +1,6 @@
 # 配置说明
 
-AddressPad 的全部数据保存在一个 YAML 文件里，不依赖数据库或后台进程。
+AddressPad 的服务器信息保存在一个 YAML 文件里，不依赖数据库或后台进程。密码不写入 YAML，而是按需保存在操作系统钥匙串中。
 
 ## 文件位置
 
@@ -41,6 +41,7 @@ servers:
     group: prod
     tags: [web, k8s]
     favorite: true
+    password_saved: true
     note: 生产 Web 入口
     extra_args: []
     last_used: 2026-10-23T09:12:00+08:00
@@ -71,9 +72,10 @@ servers:
 | `group` | string | 否 | — | 单分组名，用于显示与后续筛选 |
 | `tags` | []string | 否 | `[]` | 多标签，保存时去空白、去重 |
 | `favorite` | bool | 否 | `false` | 收藏置顶 |
+| `password_saved` | bool | 否 | `false` | 仅表示钥匙串中保存过密码，不包含密码本身 |
 | `note` | string | 否 | — | 自由文本备注 |
 | `extra_args` | []string | 否 | `[]` | 追加到 ssh 命令行（`-J` 之后、目标之前） |
-| `last_used` | string (RFC3339) | 否 | — | 程序在连接成功后写入 |
+| `last_used` | string (RFC3339) | 否 | — | 程序在连接成功后写入本次连接开始时间 |
 
 未知字段会被忽略，并在下一次保存时丢失；如需保存额外信息请使用 `note` 或 `extra_args`。
 
@@ -93,6 +95,37 @@ servers:
 
 `host` 以 `-` 开头会被拒绝，同时构造命令行时始终使用 `--` 分隔符，双重防护参数注入。
 
+## 密码存储
+
+密码不进入 `servers.yaml`，而是保存在操作系统钥匙串：
+
+| 系统 | 存储位置 |
+|---|---|
+| macOS | Keychain |
+| Windows | Credential Manager |
+| Linux | Secret Service（GNOME Keyring、KWallet 等） |
+
+- 钥匙串 service 为 `addresspad`，account 为 `server:<id>`。密码与稳定 ID 绑定，重命名服务器不会丢失。
+- YAML 只保存 `password_saved` 标记。手动写入该字段不会创建密码；钥匙串没有对应条目时，连接会回退为手动输入。
+- 写入入口是 TUI 表单的 `Password` / `Save password` 字段，或 `apad password NAME`。
+- 取消勾选 `Save password`，或执行 `apad password NAME --delete`，会删除钥匙串条目并清除标记。
+- 删除服务器会尽力删除对应钥匙串条目；钥匙串删除失败时服务器仍会删除，状态栏会提示清理失败。
+- 复制 YAML 到另一台机器不会复制密码，需要在新机器重新保存。
+- 密码不能为空，且不能包含 NUL、CR、LF；这些字符无法通过 OpenSSH 的按行 askpass 协议传递。
+- 钥匙串访问可能触发系统解锁或授权提示，具体取决于系统设置。
+
+连接时，若 `password_saved` 为 true，AddressPad 会为 `ssh` 设置 `SSH_ASKPASS`、`SSH_ASKPASS_REQUIRE=force` 和内部服务器 ID 环境变量。helper 从钥匙串读取密码并只写入 stdout，密码不会进入命令行参数或配置文件。
+
+只有简单密码提示会自动应答。首次连接的主机密钥确认、私钥 passphrase、OTP 和键盘交互挑战仍会由 helper 在终端提示；钥匙串条目缺失、读取失败或密码无效时也会回退到终端输入，连接不会因保存密码不可用而中止。
+
+已知限制：
+
+- `ProxyJump` 的跳板机密码提示可能拿到目标服务器的保存密码。建议跳板机使用密钥或 `ssh-agent`；不要依赖 askpass 自动区分同一连接链中的不同密码。
+- `SSH_ASKPASS` 只影响本次 `ssh` 进程，登录远端后的 `sudo` 等二次提示不在 AddressPad 控制范围内。
+- 强制使用 helper 依赖 OpenSSH 8.4+ 的 `SSH_ASKPASS_REQUIRE=force`。较旧版本可能忽略该变量并继续在终端提示。
+- Windows 自带 OpenSSH 对 `SSH_ASKPASS` 的支持因版本而异，部分版本会忽略 helper。此时密码仍安全保存在 Credential Manager，但连接需要手动输入；升级 OpenSSH 或在支持的环境中使用可改善。
+- Linux 需要可用的 Secret Service 会话（例如已解锁的 GNOME Keyring 或 KWallet）。无桌面会话、容器或仅 SSH 登录的环境通常没有 Secret Service，此时保存密码会失败，但普通连接仍可手动输入。macOS Keychain 和 Windows Credential Manager 无需额外服务。
+
 ## 保存机制
 
 每次增删改都执行完整写入：
@@ -105,6 +138,8 @@ servers:
 6. 设置权限 `0600`（非 Windows）
 
 任何一步失败都会保留原文件不变，并在 UI 中提示错误。写入采用“后写入者胜出”，不提供文件锁；请避免同时开多个 `apad` 实例编辑。
+
+涉及密码时，先写钥匙串再保存 YAML。YAML 保存失败会尽力恢复旧的钥匙串值，避免 `password_saved` 标记与实际密码不一致；进程被强制终止等极端情况仍可能留下孤儿条目，可用 `apad password NAME --delete` 清理。
 
 ## 损坏文件处理
 

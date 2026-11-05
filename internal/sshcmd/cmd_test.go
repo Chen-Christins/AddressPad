@@ -54,6 +54,48 @@ func TestFormat(t *testing.T) {
 	}
 }
 
+func TestEnableAskpass(t *testing.T) {
+	cmd := exec.Command("ssh")
+	cmd.Env = []string{
+		"HOME=/tmp/home",
+		"SSH_ASKPASS=/old/helper",
+		"ssh_askpass_require=prefer",
+		AskpassServerEnv + "=old-server",
+	}
+	if err := EnableAskpass(cmd, "/opt/apad", "server-1"); err != nil {
+		t.Fatal(err)
+	}
+	values := map[string]string{}
+	counts := map[string]int{}
+	for _, entry := range cmd.Env {
+		key, value, ok := strings.Cut(entry, "=")
+		if ok {
+			values[strings.ToUpper(key)] = value
+			counts[strings.ToUpper(key)]++
+		}
+	}
+	if values["SSH_ASKPASS"] != "/opt/apad" || values["SSH_ASKPASS_REQUIRE"] != "force" || values[AskpassServerEnv] != "server-1" {
+		t.Fatalf("env = %v", values)
+	}
+	for _, key := range []string{"SSH_ASKPASS", "SSH_ASKPASS_REQUIRE", AskpassServerEnv} {
+		if counts[key] != 1 {
+			t.Fatalf("%s appears %d times in %v", key, counts[key], cmd.Env)
+		}
+	}
+	if values["HOME"] != "/tmp/home" {
+		t.Fatal("existing environment was lost")
+	}
+	if strings.Contains(strings.Join(cmd.Env, "\n"), "secret") {
+		t.Fatal("environment contains a password")
+	}
+	if err := EnableAskpass(nil, "/opt/apad", "id"); err == nil {
+		t.Fatal("nil command accepted")
+	}
+	if err := EnableAskpass(cmd, "", "id"); err == nil {
+		t.Fatal("empty executable accepted")
+	}
+}
+
 func TestCommandMissingSSH(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	_, err := Command(model.Server{Name: "x", Host: "localhost"})

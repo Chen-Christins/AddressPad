@@ -1,15 +1,18 @@
 package ui
 
 import (
-	"addresspad/internal/model"
+	"errors"
 	"fmt"
-	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
 	"reflect"
 	"strconv"
 	"strings"
 	"unicode"
+
+	"addresspad/internal/model"
+	"addresspad/internal/secret"
+	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 const (
@@ -23,37 +26,61 @@ const (
 	fieldTags
 	fieldNote
 	fieldFavorite
+	fieldPassword
+	fieldSavePassword
 	fieldArgs
 	fieldCount
 )
 
-var fieldLabels = []string{"Name *", "Host *", "User", "Port", "Identity file", "Proxy jump", "Group", "Tags (comma separated)", "Note (alt+enter: newline)", "Favorite (space: toggle)", "Extra args (quoted words)"}
+var fieldLabels = []string{"Name *", "Host *", "User", "Port", "Identity file", "Proxy jump", "Group", "Tags (comma separated)", "Note (alt+enter: newline)", "Favorite (space: toggle)", "Password (system keychain)", "Save password (space: toggle)", "Extra args (quoted words)"}
 
 type serverForm struct {
 	inputs          []textinput.Model
 	note            textarea.Model
 	favorite        bool
+	savePassword    bool
 	focus           int
 	original        model.Server
 	initial         []string
 	initialFavorite bool
+	initialSave     bool
 	editing         bool
 	errors          map[int]string
 	saveError       string
 }
 
 func newForm(server model.Server, editing bool, style styles) serverForm {
-	f := serverForm{original: server, editing: editing, favorite: server.Favorite, initialFavorite: server.Favorite, errors: map[int]string{}}
+	f := serverForm{
+		original: server, editing: editing,
+		favorite: server.Favorite, initialFavorite: server.Favorite,
+		savePassword: true, initialSave: true,
+		errors: map[int]string{},
+	}
 	port := server.Port
 	if port == 0 {
 		port = 22
 	}
-	values := []string{server.Name, server.Host, server.User, strconv.Itoa(port), server.IdentityFile, server.ProxyJump, server.Group, strings.Join(server.Tags, ", "), server.Note, "", formatArgs(server.ExtraArgs)}
-	for _, value := range values {
+	values := []string{
+		server.Name, server.Host, server.User, strconv.Itoa(port),
+		server.IdentityFile, server.ProxyJump, server.Group,
+		strings.Join(server.Tags, ", "), server.Note, "",
+		"", "", formatArgs(server.ExtraArgs),
+	}
+	for i, value := range values {
 		input := textinput.New()
 		input.Prompt = ""
 		input.SetValue(value)
 		input.TextStyle, input.PromptStyle, input.Cursor.Style = style.muted, style.muted, style.muted
+		input.PlaceholderStyle = style.muted
+		if i == fieldPassword {
+			input.EchoMode = textinput.EchoPassword
+			input.EchoCharacter = '•'
+			if editing && server.PasswordSaved {
+				input.Placeholder = "saved in keychain; leave blank to keep"
+			} else {
+				input.Placeholder = "optional; stored in system keychain"
+			}
+		}
 		f.inputs = append(f.inputs, input)
 	}
 	f.note = textarea.New()
@@ -80,7 +107,7 @@ func (f serverForm) values() []string {
 }
 
 func (f serverForm) dirty() bool {
-	return !reflect.DeepEqual(f.values(), f.initial) || f.favorite != f.initialFavorite
+	return !reflect.DeepEqual(f.values(), f.initial) || f.favorite != f.initialFavorite || f.savePassword != f.initialSave
 }
 
 func (f *serverForm) setFocus(index int) tea.Cmd {
@@ -92,7 +119,7 @@ func (f *serverForm) setFocus(index int) tea.Cmd {
 	if f.focus == fieldNote {
 		return f.note.Focus()
 	}
-	if f.focus == fieldFavorite {
+	if f.focus == fieldFavorite || f.focus == fieldSavePassword {
 		return nil
 	}
 	return f.inputs[f.focus].Focus()
@@ -116,6 +143,7 @@ func (m *Model) saveForm() tea.Cmd {
 	f.errors = map[int]string{}
 	f.saveError = ""
 	v := f.values()
+	password := v[fieldPassword]
 	s := f.original
 	s.Name, s.Host, s.User = strings.TrimSpace(v[fieldName]), v[fieldHost], v[fieldUser]
 	s.IdentityFile, s.ProxyJump, s.Group = v[fieldIdentity], v[fieldProxy], v[fieldGroup]
@@ -141,6 +169,13 @@ func (m *Model) saveForm() tea.Cmd {
 	if err != nil {
 		f.errors[fieldArgs] = err.Error()
 	}
+	if password != "" {
+		if !f.savePassword {
+			f.errors[fieldSavePassword] = "Check Save password to store the entered password"
+		} else if err := secret.ValidatePassword(password); err != nil {
+			f.errors[fieldPassword] = err.Error()
+		}
+	}
 	for i := range fieldCount {
 		if _, invalid := f.errors[i]; invalid {
 			return f.setFocus(i)
@@ -151,15 +186,53 @@ func (m *Model) saveForm() tea.Cmd {
 		f.saveError = "save failed: storage is unavailable"
 		return nil
 	}
+	passwordChange := password != "" || (!f.savePassword && f.original.PasswordSaved)
+	var previousPassword string
+	previousExists, previousKnown := false, false
+	if passwordChange {
+		if m.secrets == nil {
+			f.saveError = "save password failed: system keychain is unavailable"
+			return nil
+		}
+		// Remember the old value so a failed YAML save cannot leave the
+		// keychain and password_saved metadata out of sync.
+		switch stored, getErr := m.secrets.Get(s.ID); {
+		case getErr == nil:
+			previousPassword, previousExists, previousKnown = stored, true, true
+		case errors.Is(getErr, secret.ErrNotFound):
+			previousKnown = true
+		}
+	}
+	if password != "" {
+		if err := m.secrets.Set(s.ID, password); err != nil {
+			f.saveError = "save password failed: " + err.Error()
+			return nil
+		}
+		s.PasswordSaved = true
+	} else if !f.savePassword && f.original.PasswordSaved {
+		if err := m.secrets.Delete(s.ID); err != nil && !errors.Is(err, secret.ErrNotFound) {
+			f.saveError = "remove password failed: " + err.Error()
+			return nil
+		}
+		s.PasswordSaved = false
+	}
 	if f.editing {
 		err = m.store.Update(s.ID, s)
 	} else {
 		err = m.store.Add(s)
 	}
 	if err != nil {
+		if passwordChange && previousKnown {
+			if previousExists {
+				_ = m.secrets.Set(s.ID, previousPassword)
+			} else {
+				_ = m.secrets.Delete(s.ID)
+			}
+		}
 		f.saveError = "save failed: " + err.Error()
 		return nil
 	}
+	f.inputs[fieldPassword].SetValue("")
 	m.servers = sortedServers(m.store.Config().Servers)
 	if len(filterServers([]model.Server{s}, m.search.Value())) == 0 {
 		m.search.SetValue("")
@@ -201,12 +274,16 @@ func (m *Model) updateForm(msg tea.Msg) tea.Cmd {
 				f.favorite = !f.favorite
 				return nil
 			}
+			if f.focus == fieldSavePassword {
+				f.savePassword = !f.savePassword
+				return nil
+			}
 		}
 	}
 	var cmd tea.Cmd
 	if f.focus == fieldNote {
 		f.note, cmd = f.note.Update(msg)
-	} else if f.focus != fieldFavorite {
+	} else if f.focus != fieldFavorite && f.focus != fieldSavePassword {
 		f.inputs[f.focus], cmd = f.inputs[f.focus].Update(msg)
 	}
 	return cmd

@@ -1,8 +1,8 @@
 # 路线图
 
-当前阶段：M1–M6 功能及 M7 打包/发布配置已实现，六个平台 snapshot 验证通过。目标首个版本 `v0.1.0` 尚未发布；真实主机、终端交互、跨平台运行及远端工作流验收尚未完成。
+当前阶段：M1–M6 功能、M7 打包/发布配置以及密码保存（系统钥匙串 + `SSH_ASKPASS`）已实现，六个平台 snapshot 验证通过。目标首个版本 `v0.1.0` 尚未发布；真实主机、终端交互、跨平台运行及远端工作流验收尚未完成。
 
-验证记录：本机通过 `go test ./...`、`go vet ./...`、`go build`。M3 已自动测试 60×20、200×50、24×8 等尺寸的布局、模式、搜索排序；1000 条记录过滤约 0.22 ms/op（windows/386）。本机 Go 为 windows/386，无法运行 `-race`，Unix 权限与远端 CI 待验。GoReleaser 2.12.0 的配置检查、六平台 snapshot、SHA-256 核对及 Windows amd64 版本输出均通过。详见 [releasing.md](releasing.md)。
+验证记录：本机（macOS）通过 `go test ./...`、`go vet ./...`、`go test -race ./...`，darwin/arm64、linux/amd64、windows/amd64 构建通过。M3 已自动测试 60×20、200×50、24×8 等尺寸的布局、模式、搜索排序；1000 条记录过滤约 0.22 ms/op（windows/386 历史数据）。GoReleaser 2.12.0 的配置检查、六平台 snapshot、SHA-256 核对及 Windows amd64 版本输出均通过。密码保存已自动测试钥匙串封装、askpass 注入与终端回退，并在 macOS 钥匙串手工验证写入、读取和删除。远端 CI 与真实主机验收仍待完成。详见 [releasing.md](releasing.md)。
 
 ## 里程碑
 
@@ -33,6 +33,7 @@
 - [x] 导航与滚动（`↑/↓`、`j/k`、`g/G`）
 - [x] 搜索模式与子序列过滤、多关键词 AND
 - [x] 排序：收藏 → 最近使用 → 名称
+- [x] 最近使用相对时间列（每秒刷新，窄屏隐藏）
 - [x] 帮助浮层、底部状态栏
 - [x] 过滤与模式切换的单元测试
 
@@ -42,12 +43,12 @@
 
 - [x] `sshcmd.Build`：端口、identity、ProxyJump、extra_args、`--`
 - [x] `exec.LookPath("ssh")` 检查与错误提示
-- [x] `tea.ExecProcess` 挂起 / 恢复、返回后清屏重绘
+- [x] `tea.Exec` 挂起 / 恢复、连接前后清屏、返回后重绘，结果只显示在 TUI 内
 - [x] 更新 `last_used` 并重新排序（SSH 退出码 0 时）
 - [x] 复制 ssh 命令（macOS / Linux / Windows 剪贴板回退）
 - [x] argv 表驱动测试
 
-M4 验证：普通测试、静态检查、构建通过；sshcmd 覆盖率 79.4%，ui 覆盖率 91.3%。使用测试子进程验证 `tea.ExecProcess` 的输出移交、正常退出与退出码 23，不访问网络、不操作真实剪贴板。真实 SSH、密码/密钥认证、host key 交互、剪贴板及终端残影验证待手工完成。Windows 剪贴板使用 UTF-8 PowerShell 替代 clip.exe，复制命令按 PowerShell 语法转义。
+M4 验证：普通测试、静态检查、构建通过；sshcmd 覆盖率 79.4%，ui 覆盖率 91.3%。使用测试子进程验证 `tea.Exec` 的输出移交、连接前后清屏、正常退出与退出码 23，不访问网络、不操作真实剪贴板；SSH 输出不会在退出 AddressPad 后暴露。保存密码通过系统钥匙串 + `SSH_ASKPASS` 实现，自动测试覆盖环境注入、密码读取、缺失回退及 host key / passphrase / OTP 交互；macOS 钥匙串写入、读取、删除已手工验证。真实 SSH、密码/密钥认证、host key 交互、剪贴板及终端残影验证待手工完成。Windows 剪贴板使用 UTF-8 PowerShell 替代 clip.exe，复制命令按 PowerShell 语法转义。
 
 **完成标准**：本机连接真实主机成功；密码提示与 host key 提示可正常交互；退出后 TUI 无残影；`c` 复制内容可直接粘贴执行。
 
@@ -82,7 +83,7 @@ M6 自动测试覆盖：多别名/引号/注释/Include glob 与上下文、相�
 - [x] `.goreleaser.yaml`：darwin / linux / windows × amd64 / arm64，`CGO_ENABLED=0`
 - [x] GitHub Actions：tag 触发草稿 release、checksums、产物归档（远端执行待验证）
 - [ ] README：截图 / asciinema、安装、常用操作
-- [ ] `docs/` 与实现保持一致
+- [x] `docs/` 与实现保持一致
 - [ ] 打 tag `v0.1.0`
 
 M7 验证：GoReleaser 2.12.0 `check` 与 `release --snapshot --clean` 通过，生成 4 个 tar.gz、2 个 zip 和 checksums.txt；六个归档 SHA-256 全部匹配，Windows amd64 二进制版本注入正确。README 已补安装/用法与明确标注的文本示意，实际截图/录屏待完成；新增发布说明和人工门禁。未打 tag、未推送、未创建远端 release，最终发布需维护者授权。
@@ -92,11 +93,12 @@ M7 验证：GoReleaser 2.12.0 `check` 与 `release --snapshot --clean` 通过，
 ## 总验收清单
 
 - [x] `go vet ./...` 无告警
-- [ ] `go test -race ./...` 全绿
-- [x] `go build ./...` 成功
+- [x] `go test -race ./...` 全绿（本机 macOS）
+- [x] `go build ./...` 成功，linux/windows/darwin 交叉构建通过
 - [x] `goreleaser release --snapshot --clean` 成功
 - [ ] 本机连接 OrbStack / 真实服务器各一次
 - [ ] 密码认证与密钥认证各验证一次
+- [ ] 在 macOS / Windows / Linux 各验证一次保存密码（Linux 需可用的 Secret Service）
 - [ ] 配置损坏、无 ssh、UTF-8 中文备注三种异常路径验证
 - [ ] 60 列窄终端与 200 列宽终端各截图
 
@@ -104,19 +106,21 @@ M7 验证：GoReleaser 2.12.0 `check` 与 `release --snapshot --clean` 通过，
 
 | 风险 | 影响 | 缓解 |
 |---|---|---|
-| Windows 上 `ExecProcess` + OpenSSH 的 alt-screen 切换异常 | 连接后界面错乱 | M4 优先在 Windows Terminal 验证；必要时降级为“退出 TUI 后 exec，结束不回列表” |
+| Windows 上 `tea.Exec` + OpenSSH 的 alt-screen 切换异常 | 连接后界面错乱 | M4 优先在 Windows Terminal 验证；必要时降级为“退出 TUI 后 exec，结束不回列表” |
 | ssh 输出后 TUI 残留 | 显示错乱 | 返回时主动 `tea.ClearScreen` 并全量重绘；关闭鼠标模式 |
 | Linux 无剪贴板工具 | 复制失败 | 依次尝试 `wl-copy` / `xclip` / `xsel`，全部失败时在状态栏显示命令 |
 | Include 循环 | 导入卡死 | 记录已访问真实路径，深度上限 8，超限报错 |
 | 配置被外部同时修改 | 丢更新 | 文档明示后写入者胜出；v1 不做锁 |
 | 中文 / emoji 宽度 | 列错位 | 用 `lipgloss.Width` 计算显示宽度，测试覆盖 CJK 与 emoji |
+| Linux 无 Secret Service | 无法保存密码 | 明确报错并回退手动输入；文档说明桌面钥匙串依赖 |
+| Windows OpenSSH 忽略 SSH_ASKPASS | 保存密码不能自动填充 | 文档标注版本差异；连接回退手动输入，密码仍存 Credential Manager |
+| ProxyJump 共用密码 | 跳板机提示可能收到目标密码 | 文档建议跳板机使用密钥或 ssh-agent；后续支持每跳密码 |
 | ssh 参数注入 | 命令执行异常 | 拒绝 `-` 开头的 host，命令行使用 `--` 分隔 |
 
 ## 后续版本候选
 
 ### v0.2
 
-- 密码存入 macOS Keychain / Windows Credential Manager / libsecret，通过 `SSH_ASKPASS` 免交互连接
 - 分组侧边栏、标签筛选、最近连接视图
 - 连通性检测（并发 TCP 探测，显示在线状态）
 - 配置热加载
@@ -142,5 +146,6 @@ M7 验证：GoReleaser 2.12.0 `check` 与 `release --snapshot --clean` 通过，
 | 2026-10-23 | Go + Bubble Tea | 单二进制、启动快、TUI 生态成熟 |
 | 2026-10-23 | 连接交给系统 `ssh` | 原生兼容 agent、ProxyJump、known_hosts，维护成本最低 |
 | 2026-10-23 | 自有 YAML + 从 ssh config 导入 | 可编辑、可版本化，同时不破坏现有 config |
-| 2026-10-23 | v1 不存密码 | 降低安全风险，ssh 自身提示足够可用 |
+| 2026-10-23 | 初版不存密码 | 降低安全风险；后由 2026-11-05 决策取代 |
+| 2026-11-05 | 密码存入系统钥匙串，YAML 只记录 `password_saved` | 避免明文入库，同时通过 `SSH_ASKPASS` 支持免交互连接 |
 | 2026-10-23 | 跨平台发布（darwin / linux / windows） | 单二进制无运行时依赖，goreleaser 成本低 |
